@@ -134,10 +134,25 @@
             </Rectangle>
 
             <!-- 顶部标题栏与 macOS 关闭小红点 -->
+            <!-- 三列布局：左名字 / 中居中标题(列表模式) / 右视图切换+关闭，
+                 避免之前单单元格叠加导致 X 与切换按钮重叠。 -->
             <Grid Grid.Row="0" Background="Transparent">
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0,0,0">
-                    <StackPanel.Style>
-                        <Style TargetType="{x:Type StackPanel}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Column="0"
+                           Text="{Binding Name}"
+                           FontSize="12"
+                           FontWeight="SemiBold"
+                           VerticalAlignment="Center"
+                           Margin="14,0,8,0"
+                           TextTrimming="CharacterEllipsis">
+                    <TextBlock.Style>
+                        <Style TargetType="{x:Type TextBlock}">
+                            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
                             <Setter Property="Visibility" Value="Visible" />
                             <Style.Triggers>
                                 <DataTrigger Binding="{Binding IsMappingListMode}" Value="True">
@@ -145,32 +160,19 @@
                                 </DataTrigger>
                             </Style.Triggers>
                         </Style>
-                    </StackPanel.Style>
-                    <TextBlock Text="{Binding Name}"
-                               FontSize="12"
-                               FontWeight="SemiBold"
-                               VerticalAlignment="Center">
-                        <TextBlock.Style>
-                            <Style TargetType="{x:Type TextBlock}">
-                                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsMappingListMode}" Value="True">
-                                        <Setter Property="Foreground" Value="White" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
-                </StackPanel>
+                    </TextBlock.Style>
+                </TextBlock>
 
-                <!-- 关闭小按钮 (悬浮变亮红，自带微过渡，像素模式下自动方块化) -->
-                <TextBlock Text="{Binding Name}"
+                <!-- 列表模式居中标题（替代左侧名字） -->
+                <TextBlock Grid.Column="0"
+                           Grid.ColumnSpan="3"
+                           Text="{Binding Name}"
                            Foreground="{DynamicResource TextPrimaryBrush}"
                            FontSize="15"
                            FontWeight="SemiBold"
                            HorizontalAlignment="Center"
                            VerticalAlignment="Center"
-                           Margin="56,0,86,0">
+                           Margin="14,0,14,0">
                     <TextBlock.Style>
                         <Style TargetType="{x:Type TextBlock}">
                             <Setter Property="Visibility" Value="Collapsed" />
@@ -183,10 +185,11 @@
                     </TextBlock.Style>
                 </TextBlock>
 
-                <StackPanel Orientation="Horizontal"
-                            HorizontalAlignment="Right"
+                <!-- 映射盒视图切换按钮（网格/列表），独占一列避免与 X 重叠 -->
+                <StackPanel Grid.Column="1"
+                            Orientation="Horizontal"
                             VerticalAlignment="Center"
-                            Margin="0,0,34,0">
+                            Margin="0,0,8,0">
                     <StackPanel.Style>
                         <Style TargetType="{x:Type StackPanel}">
                             <Setter Property="Visibility" Value="Collapsed" />
@@ -197,7 +200,7 @@
                             </Style.Triggers>
                         </Style>
                     </StackPanel.Style>
-                    <Button Command="{Binding UseMappingGridModeCommand}"
+                    <Button Click="OnUseMappingGridModeClick"
                             ToolTip="网格视图"
                             Margin="0,0,4,0">
                         <Button.Style>
@@ -217,7 +220,7 @@
                               Height="12"
                               Stretch="Uniform" />
                     </Button>
-                    <Button Command="{Binding UseMappingListModeCommand}"
+                    <Button Click="OnUseMappingListModeClick"
                             ToolTip="列表视图">
                         <Button.Style>
                             <Style TargetType="{x:Type Button}" BasedOn="{StaticResource MappingModeButtonStyle}">
@@ -240,19 +243,20 @@
                     </Button>
                 </StackPanel>
 
-                <Button Click="OnCloseClick"
+                <!-- 关闭小按钮 (悬浮变亮红，自带微过渡，像素模式下自动方块化) -->
+                <Button Grid.Column="2"
+                        Click="OnCloseClick"
                         Width="12"
                         Height="12"
                         Margin="0,0,14,0"
-                        HorizontalAlignment="Right"
                         VerticalAlignment="Center"
                         Focusable="False">
                     <Button.Template>
                         <ControlTemplate TargetType="Button">
                             <Grid Background="Transparent">
                                 <Rectangle x:Name="Circle" Fill="#20808080" Width="12" Height="12" RadiusX="6" RadiusY="6" SnapsToDevicePixels="True" />
-                                <Path x:Name="Cross" Data="M 3.5,3.5 L 8.5,8.5 M 8.5,3.5 L 3.5,8.5" 
-                                      Stroke="White" StrokeThickness="1.2" Opacity="0" 
+                                <Path x:Name="Cross" Data="M 3.5,3.5 L 8.5,8.5 M 8.5,3.5 L 3.5,8.5"
+                                      Stroke="White" StrokeThickness="1.2" Opacity="0"
                                       HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Grid>
                             <ControlTemplate.Triggers>

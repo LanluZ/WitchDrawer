@@ -25,6 +25,12 @@ public partial class MainWindow : Window
     public event EventHandler? WindowHidden;
     public event EventHandler? WindowClosing;
 
+    /// <summary>
+    /// Raised when the user asks to reopen a desktop box window (e.g. by
+    /// double-clicking its entry in the sidebar list). Carries the box id.
+    /// </summary>
+    public event EventHandler<Guid>? ReopenBoxRequested;
+
     public MainWindow(MainViewModel viewModel, QuickPanelWindow quickPanel, IAppLogger logger)
     {
         DataContext = viewModel;
@@ -200,6 +206,24 @@ public partial class MainWindow : Window
         if (sender is ListBox listBox && listBox.SelectedItem is not null)
         {
             listBox.ScrollIntoView(listBox.SelectedItem);
+        }
+    }
+
+    private void OnBoxesMouseDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        // Double-clicking a sidebar entry reopens (shows + focuses) the
+        // corresponding desktop box window — the only way back from the
+        // window's close (X) -> Hide() behavior short of restarting the app.
+        if (e.OriginalSource is not DependencyObject source
+            || sender is not ItemsControl items)
+        {
+            return;
+        }
+
+        var container = ItemsControl.ContainerFromElement(items, source) as FrameworkElement;
+        if (container?.DataContext is BoxViewModel box)
+        {
+            ReopenBoxRequested?.Invoke(this, box.Id);
         }
     }
 

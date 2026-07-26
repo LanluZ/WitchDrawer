@@ -79,6 +79,7 @@ public partial class App : Application
                 // Desktop boxes already mutated their own UI; only sync main/quick panel.
                 await mainViewModel.ReloadItemsFromDesktopAsync();
             };
+            _mainWindow.ReopenBoxRequested += async (_, boxId) => await _desktopBoxManager.ShowAsync(boxId);
             _mainWindow.Closed += async (_, _) => await _desktopBoxManager.CloseAllAsync();
 
             mainViewModel.UpdateRequested += async (_, result) =>

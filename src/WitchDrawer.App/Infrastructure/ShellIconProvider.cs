@@ -65,10 +65,9 @@ public static class ShellIconProvider
     {
         if (!isDirectory && IsShortcut(fullPath))
         {
-            foreach (var candidatePath in GetShortcutIconCandidatePaths(fullPath))
+            foreach (var candidate in GetShortcutIconCandidates(fullPath))
             {
-                var candidateAttributes = Directory.Exists(candidatePath) ? FileAttributeDirectory : FileAttributeNormal;
-                var shortcutIcon = GetIcon(candidatePath, candidateAttributes, GetIconFlags(size), size);
+                var shortcutIcon = TryExtractCandidateIcon(candidate, size);
                 if (shortcutIcon is not null)
                 {
                     return shortcutIcon;
@@ -95,46 +94,125 @@ public static class ShellIconProvider
 
     private static bool IsShortcut(string path)
     {
-        return Path.GetExtension(path).Equals(".lnk", StringComparison.OrdinalIgnoreCase);
+        var extension = Path.GetExtension(path);
+        return extension.Equals(".lnk", StringComparison.OrdinalIgnoreCase)
+            || extension.Equals(".url", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static IEnumerable<string> GetShortcutIconCandidatePaths(string shortcutPath)
+    private static IEnumerable<IconCandidate> GetShortcutIconCandidates(string shortcutPath)
     {
-        var shortcut = ShortcutInfo.TryLoad(shortcutPath);
-        if (shortcut is null)
+        var descriptor = ShortcutDescriptor.TryLoad(shortcutPath);
+        if (descriptor is null)
         {
             yield break;
         }
 
-        if (TryGetIconPath(shortcut.IconLocation, out var iconPath))
+        var baseDir = Path.GetDirectoryName(shortcutPath) ?? string.Empty;
+
+        if (TryParseIconLocation(descriptor.IconLocation, out var iconFile, out var iconIndex)
+            && TryResolveIconPath(iconFile, baseDir, out var iconPath))
         {
-            yield return iconPath;
+            yield return new IconCandidate(iconPath, iconIndex);
         }
 
-        if (TryGetExistingPath(shortcut.TargetPath, out var targetPath)
-            && !targetPath.Equals(iconPath, StringComparison.OrdinalIgnoreCase))
+        if (TryGetExistingPath(descriptor.TargetPath, out var targetPath))
         {
-            yield return targetPath;
+            yield return new IconCandidate(targetPath, -1);
         }
     }
 
-    private static bool TryGetIconPath(string? iconLocation, out string iconPath)
+    private static ImageSource? TryExtractCandidateIcon(IconCandidate candidate, int size)
     {
-        iconPath = string.Empty;
-        if (string.IsNullOrWhiteSpace(iconLocation))
+        // A non-negative index means the candidate is an icon container
+        // (.ico/.exe/.dll) and the specific icon must be extracted by index.
+        // SHGetFileInfo would otherwise ignore the index and return icon #0,
+        // which is often blank for icon-only libraries such as imageres.dll.
+        if (candidate.IconIndex >= 0)
+        {
+            var indexed = TryExtractIndexedIcon(candidate.Path, candidate.IconIndex, size);
+            if (indexed is not null)
+            {
+                return indexed;
+            }
+        }
+
+        var attributes = Directory.Exists(candidate.Path) ? FileAttributeDirectory : FileAttributeNormal;
+        var flags = GetIconFlags(size);
+
+        if (!File.Exists(candidate.Path) && !Directory.Exists(candidate.Path))
+        {
+            flags |= ShgfiUseFileAttributes;
+        }
+
+        return GetIcon(candidate.Path, attributes, flags, size)
+            ?? GetIcon(candidate.Path, attributes, flags | ShgfiUseFileAttributes, size);
+    }
+
+    private static ImageSource? TryExtractIndexedIcon(string path, int iconIndex, int size)
+    {
+        try
+        {
+            var handles = new nint[1];
+            var extracted = PrivateExtractIcons(path, iconIndex, size, size, handles, null, 1, 0);
+            if (extracted == 0 || handles[0] == nint.Zero)
+            {
+                return null;
+            }
+
+            try
+            {
+                var source = Imaging.CreateBitmapSourceFromHIcon(
+                    handles[0],
+                    Int32Rect.Empty,
+                    BitmapSizeOptions.FromWidthAndHeight(size, size));
+                source.Freeze();
+                return source;
+            }
+            finally
+            {
+                DestroyIcon(handles[0]);
+            }
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static bool TryParseIconLocation(string? iconLocation, out string file, out int iconIndex)
+        => ShortcutParsing.TryParseIconLocation(iconLocation, out file, out iconIndex);
+
+    private static bool TryResolveIconPath(string rawPath, string baseDir, out string fullPath)
+    {
+        fullPath = string.Empty;
+        if (string.IsNullOrWhiteSpace(rawPath))
         {
             return false;
         }
 
-        var value = iconLocation.Trim().Trim('"');
-        var commaIndex = value.LastIndexOf(',');
-        if (commaIndex > 0
-            && int.TryParse(value[(commaIndex + 1)..], out _))
-        {
-            value = value[..commaIndex];
-        }
+        var value = rawPath.Trim().Trim('"');
 
-        return TryGetExistingPath(value, out iconPath);
+        try
+        {
+            // Resolve relative icon paths against the shortcut's own directory
+            // first (common for .url files authored next to their icon).
+            if (!Path.IsPathRooted(value) && !string.IsNullOrEmpty(baseDir))
+            {
+                var relative = Path.GetFullPath(Path.Combine(baseDir, value));
+                if (File.Exists(relative))
+                {
+                    fullPath = relative;
+                    return true;
+                }
+            }
+
+            return TryGetExistingPath(value, out fullPath);
+        }
+        catch
+        {
+            fullPath = string.Empty;
+            return false;
+        }
     }
 
     private static bool TryGetExistingPath(string? path, out string fullPath)
@@ -194,12 +272,58 @@ public static class ShellIconProvider
         uint fileInfoSize,
         uint flags);
 
+    // Extracts a specific icon by index from an icon container (.ico/.exe/.dll),
+    // which SHGetFileInfo cannot do (it always returns icon #0). Used for shortcut
+    // IconLocation values such as "C:\Windows\System32\imageres.dll,109".
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern uint PrivateExtractIcons(
+        string szFileName,
+        int nIconIndex,
+        int cxIcon,
+        int cyIcon,
+        [Out, MarshalAs(UnmanagedType.LPArray)] nint[] phicon,
+        [Out, MarshalAs(UnmanagedType.LPArray)] int[]? piconid,
+        uint nIcons,
+        uint flags);
+
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool DestroyIcon(nint icon);
 
-    private sealed record ShortcutInfo(string TargetPath, string IconLocation)
+    private sealed record IconCandidate(string Path, int IconIndex);
+
+    private sealed record ShortcutDescriptor(string TargetPath, string IconLocation)
     {
-        public static ShortcutInfo? TryLoad(string shortcutPath)
+        public static ShortcutDescriptor? TryLoad(string shortcutPath)
+        {
+            if (shortcutPath.EndsWith(".url", StringComparison.OrdinalIgnoreCase))
+            {
+                return TryLoadUrlShortcut(shortcutPath);
+            }
+
+            return TryLoadLnkShortcut(shortcutPath);
+        }
+
+        // .url files are plain INI text ([InternetShortcut] URL= IconFile= IconIndex=),
+        // not IShellLinkW payloads, so parse them directly instead of going through COM.
+        private static ShortcutDescriptor? TryLoadUrlShortcut(string shortcutPath)
+        {
+            try
+            {
+                var content = File.ReadAllText(shortcutPath);
+                if (!ShortcutParsing.TryParseUrlShortcut(content, out var parsed))
+                {
+                    return null;
+                }
+
+                return new ShortcutDescriptor(parsed.TargetUrl, parsed.IconLocation);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static ShortcutDescriptor? TryLoadLnkShortcut(string shortcutPath)
         {
             IShellLinkW? shellLink = null;
             try
@@ -228,7 +352,7 @@ public static class ShellIconProvider
                 var iconLocation = new StringBuilder(MaxPath);
                 shellLink.GetIconLocation(iconLocation, iconLocation.Capacity, out _);
 
-                return new ShortcutInfo(targetPath.ToString(), iconLocation.ToString());
+                return new ShortcutDescriptor(targetPath.ToString(), iconLocation.ToString());
             }
             catch
             {

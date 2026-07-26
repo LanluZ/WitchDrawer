@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using WitchDrawer.App.Infrastructure;
 using WitchDrawer.App.ViewModels;
@@ -29,6 +30,7 @@ public partial class DesktopBoxWindow : Window
     private DrawerItemViewModel? _dragStartItem;
     private DrawerItemViewModel? _keyboardDeleteTarget;
     private Func<Guid, Task>? _positionChangedCallback;
+    private bool _isMappingViewTransitioning;
 
     private sealed class DesktopBoxDragPayload(Guid dragId, Guid itemId, Guid sourceBoxId)
     {
@@ -173,6 +175,109 @@ public partial class DesktopBoxWindow : Window
     private void OnCloseClick(object sender, RoutedEventArgs e)
     {
         Close();
+    }
+
+    private async void OnUseMappingGridModeClick(object sender, RoutedEventArgs e)
+    {
+        await SwitchMappingViewModeAsync(useListMode: false);
+    }
+
+    private async void OnUseMappingListModeClick(object sender, RoutedEventArgs e)
+    {
+        await SwitchMappingViewModeAsync(useListMode: true);
+    }
+
+    private async Task SwitchMappingViewModeAsync(bool useListMode)
+    {
+        if (_isMappingViewTransitioning
+            || !ViewModel.IsMappingBox
+            || ViewModel.IsMappingListMode == useListMode)
+        {
+            return;
+        }
+
+        _isMappingViewTransitioning = true;
+        var incomingList = useListMode ? FileList : IconList;
+
+        try
+        {
+            var startWidth = Math.Max(MinWidth, ActualWidth);
+            var startHeight = Math.Max(MinHeight, ActualHeight);
+
+            // SizeToContent would otherwise apply the target view's desired size in one frame.
+            // Freeze the current size first, then animate to the newly measured target size.
+            SizeToContent = SizeToContent.Manual;
+            Width = startWidth;
+            Height = startHeight;
+            incomingList.BeginAnimation(OpacityProperty, null);
+            incomingList.Opacity = 0;
+
+            var modeChangeTask = useListMode
+                ? ViewModel.UseMappingListModeCommand.ExecuteAsync(null)
+                : ViewModel.UseMappingGridModeCommand.ExecuteAsync(null);
+
+            await Dispatcher.InvokeAsync(
+                () => { },
+                DispatcherPriority.DataBind);
+
+            WindowBorder.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            var targetWidth = Math.Max(MinWidth, WindowBorder.DesiredSize.Width);
+            var targetHeight = Math.Max(MinHeight, WindowBorder.DesiredSize.Height);
+
+            incomingList.Opacity = 1;
+            incomingList.BeginAnimation(
+                OpacityProperty,
+                new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(160))
+                {
+                    BeginTime = TimeSpan.FromMilliseconds(45),
+                    EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+                });
+
+            await Task.WhenAll(
+                modeChangeTask,
+                AnimateWindowSizeAsync(startWidth, startHeight, targetWidth, targetHeight));
+        }
+        finally
+        {
+            incomingList.BeginAnimation(OpacityProperty, null);
+            incomingList.Opacity = 1;
+            BeginAnimation(WidthProperty, null);
+            BeginAnimation(HeightProperty, null);
+            SizeToContent = SizeToContent.WidthAndHeight;
+            ClearValue(WidthProperty);
+            ClearValue(HeightProperty);
+            _isMappingViewTransitioning = false;
+            QueueSendToBottom();
+        }
+    }
+
+    private Task AnimateWindowSizeAsync(
+        double startWidth,
+        double startHeight,
+        double targetWidth,
+        double targetHeight)
+    {
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var duration = TimeSpan.FromMilliseconds(220);
+        var easing = new CubicEase { EasingMode = EasingMode.EaseOut };
+
+        Width = targetWidth;
+        Height = targetHeight;
+
+        var widthAnimation = new DoubleAnimation(startWidth, targetWidth, duration)
+        {
+            EasingFunction = easing
+        };
+        var heightAnimation = new DoubleAnimation(startHeight, targetHeight, duration)
+        {
+            EasingFunction = easing
+        };
+        heightAnimation.Completed += (_, _) => completion.TrySetResult();
+
+        BeginAnimation(WidthProperty, widthAnimation, HandoffBehavior.SnapshotAndReplace);
+        BeginAnimation(HeightProperty, heightAnimation, HandoffBehavior.SnapshotAndReplace);
+
+        return completion.Task;
     }
 
     private void OnPreviewDragOver(object sender, DragEventArgs e)

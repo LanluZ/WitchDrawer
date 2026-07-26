@@ -217,9 +217,11 @@
                                        Margin="6,0,0,12"
                                        />
 
-                            <ListBox ItemsSource="{Binding Boxes}"
+                            <ListBox x:Name="BoxesList"
+                                     ItemsSource="{Binding Boxes}"
                                      SelectedItem="{Binding SelectedBox, Mode=TwoWay}"
                                      SelectionChanged="OnBoxesSelectionChanged"
+                                     MouseDoubleClick="OnBoxesMouseDoubleClick"
                                      ScrollViewer.CanContentScroll="True"
                                      VirtualizingPanel.IsVirtualizing="True"
                                      VirtualizingPanel.VirtualizationMode="Recycling"

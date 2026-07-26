@@ -164,6 +164,32 @@ public sealed class DesktopBoxManager
         }
     }
 
+    /// <summary>
+    /// Reopens the desktop window for a box that was hidden via its close (X)
+    /// button. If the window still exists in memory it is simply shown again;
+    /// otherwise a full refresh is triggered so it gets recreated.
+    /// </summary>
+    /// <returns><see langword="true"/> if a window was shown; <see langword="false"/> otherwise.</returns>
+    public async Task<bool> ShowAsync(Guid boxId)
+    {
+        if (_closing)
+        {
+            return false;
+        }
+
+        if (_windows.TryGetValue(boxId, out var window) && !window.IsVisible)
+        {
+            window.Show();
+            window.QueueSendToBottom();
+            return true;
+        }
+
+        // Window was destroyed (e.g. fully closed) or never created this session:
+        // refresh so the box window is recreated for the current box set.
+        await RefreshAsync();
+        return _windows.TryGetValue(boxId, out var refreshed) && refreshed.IsVisible;
+    }
+
     public async Task SavePositionAsync(Guid boxId)
     {
         if (!_windows.TryGetValue(boxId, out var window))
