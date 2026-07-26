@@ -239,6 +239,18 @@ public partial class MainWindow : Window
         MainItemsList.Focus();
     }
 
+    private async void OnTodoTitleKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter || !ViewModel.AddTodoCommand.CanExecute(null))
+        {
+            return;
+        }
+
+        e.Handled = true;
+        await ViewModel.AddTodoCommand.ExecuteAsync(null);
+        TodoTitleTextBox.Focus();
+    }
+
     private void OnCreateBoxClicked(object sender, RoutedEventArgs e)
     {
         CreateBoxPopup.IsOpen = true;

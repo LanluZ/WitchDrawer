@@ -165,6 +165,7 @@
                                 <Style.Triggers>
                                     <MultiDataTrigger>
                                         <MultiDataTrigger.Conditions>
+                                            <Condition Binding="{Binding IsTodoPage}" Value="False" />
                                             <Condition Binding="{Binding IsSettingsPage}" Value="False" />
                                             <Condition Binding="{Binding IsAboutPage}" Value="False" />
                                         </MultiDataTrigger.Conditions>
@@ -172,6 +173,15 @@
                                         <Setter Property="Foreground" Value="White" />
                                         <Setter Property="FontWeight" Value="SemiBold" />
                                     </MultiDataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                            <Style x:Key="NavTodoButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource NavButtonBaseStyle}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsTodoPage}" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
+                                        <Setter Property="Foreground" Value="White" />
+                                        <Setter Property="FontWeight" Value="SemiBold" />
+                                    </DataTrigger>
                                 </Style.Triggers>
                             </Style>
                             <Style x:Key="NavSettingsButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource NavButtonBaseStyle}">
@@ -196,19 +206,23 @@
 
                         <StackPanel DockPanel.Dock="Top">
                             <!-- Nav Control -->
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,20" HorizontalAlignment="Center">
+                            <UniformGrid Columns="4" Margin="0,0,0,20" HorizontalAlignment="Stretch">
                                 <Button Content="概览"
                                         Command="{Binding ShowDashboardCommand}"
                                         Style="{StaticResource NavOverviewButtonStyle}"
-                                        Margin="0,0,8,0" />
+                                        Margin="0,0,4,0" />
+                                <Button Content="待办"
+                                        Command="{Binding ShowTodoCommand}"
+                                        Style="{StaticResource NavTodoButtonStyle}"
+                                        Margin="0,0,4,0" />
                                 <Button Content="设置"
                                         Command="{Binding ShowSettingsCommand}"
                                         Style="{StaticResource NavSettingsButtonStyle}"
-                                        Margin="0,0,8,0" />
+                                        Margin="0,0,4,0" />
                                 <Button Content="关于"
                                         Command="{Binding ShowAboutCommand}"
                                         Style="{StaticResource NavAboutButtonStyle}" />
-                            </StackPanel>
+                            </UniformGrid>
 
                             <TextBlock Text="收纳盒列表"
                                        FontSize="12"
@@ -366,6 +380,9 @@
                                 <Setter Property="Visibility" Value="Visible" />
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsSettingsPage}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding IsTodoPage}" Value="True">
                                         <Setter Property="Visibility" Value="Collapsed" />
                                     </DataTrigger>
                                     <DataTrigger Binding="{Binding IsAboutPage}" Value="True">
@@ -880,6 +897,232 @@
                                 </DockPanel>
                             </Border>
                         </Grid>
+                    </Grid>
+
+                    <!-- Todo Page -->
+                    <Grid Visibility="{Binding IsTodoPage, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <Grid Grid.Row="0" Margin="0,0,0,20">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock Text="Todo List"
+                                           Foreground="{DynamicResource TextMutedBrush}"
+                                           FontSize="13"
+                                           FontWeight="Bold" />
+                                <TextBlock Text="待办事项"
+                                           Margin="0,4,0,0"
+                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                           FontSize="28"
+                                           FontWeight="Bold" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1"
+                                        Orientation="Horizontal"
+                                        VerticalAlignment="Bottom">
+                                <Border Background="{DynamicResource AccentSoftBrush}"
+                                        CornerRadius="12"
+                                        Padding="11,6"
+                                        Margin="0,0,8,0">
+                                    <TextBlock Text="{Binding TodoRemainingCount, StringFormat=待完成 {0}}"
+                                               Foreground="{DynamicResource AccentBrush}"
+                                               FontSize="12"
+                                               FontWeight="SemiBold" />
+                                </Border>
+                                <Border Background="{DynamicResource PanelBrush}"
+                                        BorderBrush="{DynamicResource BorderBrushSoft}"
+                                        BorderThickness="1"
+                                        CornerRadius="12"
+                                        Padding="11,6">
+                                    <TextBlock Text="{Binding TodoCompletedCount, StringFormat=已完成 {0}}"
+                                               Foreground="{DynamicResource TextMutedBrush}"
+                                               FontSize="12"
+                                               FontWeight="SemiBold" />
+                                </Border>
+                            </StackPanel>
+                        </Grid>
+
+                        <Border Grid.Row="1"
+                                Background="{DynamicResource PanelBrush}"
+                                BorderBrush="{DynamicResource BorderBrushSoft}"
+                                BorderThickness="1"
+                                CornerRadius="16"
+                                Padding="8"
+                                Margin="0,0,0,14">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="TodoTitleTextBox"
+                                         Text="{Binding NewTodoTitle, UpdateSourceTrigger=PropertyChanged}"
+                                         KeyDown="OnTodoTitleKeyDown"
+                                         MaxLength="200"
+                                         Height="38"
+                                         Padding="12,0"
+                                         VerticalContentAlignment="Center"
+                                         Foreground="{DynamicResource TextPrimaryBrush}"
+                                         Background="Transparent"
+                                         BorderThickness="0"
+                                         FontSize="13.5"
+                                         ToolTip="输入待办内容，按 Enter 添加" />
+                                <TextBlock Margin="13,0,0,0"
+                                           VerticalAlignment="Center"
+                                           IsHitTestVisible="False"
+                                           Text="添加一个待办事项..."
+                                           Foreground="{DynamicResource TextMutedBrush}">
+                                    <TextBlock.Style>
+                                        <Style TargetType="{x:Type TextBlock}">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding NewTodoTitle}" Value="">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                                <Button Grid.Column="1"
+                                        Content="添加"
+                                        Command="{Binding AddTodoCommand}"
+                                        Style="{StaticResource PrimaryButtonStyle}"
+                                        Height="36"
+                                        MinWidth="72"
+                                        Padding="16,0" />
+                            </Grid>
+                        </Border>
+
+                        <Border Grid.Row="2"
+                                Background="{DynamicResource PanelBrush}"
+                                BorderBrush="{DynamicResource BorderBrushSoft}"
+                                BorderThickness="1"
+                                CornerRadius="18"
+                                Padding="10"
+                                ClipToBounds="True">
+                            <Grid>
+                                <StackPanel HorizontalAlignment="Center"
+                                            VerticalAlignment="Center"
+                                            Visibility="{Binding TodoItems.Count, Converter={StaticResource ZeroToVisibilityConverter}}">
+                                    <Border Width="52"
+                                            Height="52"
+                                            Background="{DynamicResource AccentSoftBrush}"
+                                            CornerRadius="16"
+                                            Margin="0,0,0,12">
+                                        <Path Data="M 5,12 L 10,17 L 20,6"
+                                              Stroke="{DynamicResource AccentBrush}"
+                                              StrokeThickness="2.2"
+                                              StrokeStartLineCap="Round"
+                                              StrokeEndLineCap="Round"
+                                              Width="24"
+                                              Height="24"
+                                              Stretch="Uniform" />
+                                    </Border>
+                                    <TextBlock Text="今天还没有待办"
+                                               HorizontalAlignment="Center"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"
+                                               FontSize="15"
+                                               FontWeight="SemiBold" />
+                                    <TextBlock Text="在上方输入内容，按 Enter 快速添加"
+                                               Margin="0,5,0,0"
+                                               Foreground="{DynamicResource TextMutedBrush}"
+                                               FontSize="12" />
+                                </StackPanel>
+
+                                <ListBox ItemsSource="{Binding TodoItems}"
+                                         Visibility="{Binding TodoItems.Count, Converter={StaticResource InverseBooleanToVisibilityConverter}}"
+                                         ScrollViewer.CanContentScroll="True"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                         VirtualizingPanel.IsVirtualizing="True"
+                                         VirtualizingPanel.VirtualizationMode="Recycling">
+                                    <ListBox.ItemContainerStyle>
+                                        <Style TargetType="{x:Type ListBoxItem}">
+                                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                                            <Setter Property="Padding" Value="0" />
+                                            <Setter Property="Margin" Value="0,0,0,6" />
+                                            <Setter Property="Template">
+                                                <Setter.Value>
+                                                    <ControlTemplate TargetType="{x:Type ListBoxItem}">
+                                                        <Border x:Name="Root"
+                                                                Background="{DynamicResource PanelAltBrush}"
+                                                                BorderBrush="{DynamicResource BorderBrushSoft}"
+                                                                BorderThickness="1"
+                                                                CornerRadius="13"
+                                                                Padding="12,9">
+                                                            <ContentPresenter />
+                                                        </Border>
+                                                        <ControlTemplate.Triggers>
+                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                <Setter TargetName="Root" Property="Background" Value="{DynamicResource HoverBrush}" />
+                                                            </Trigger>
+                                                        </ControlTemplate.Triggers>
+                                                    </ControlTemplate>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </Style>
+                                    </ListBox.ItemContainerStyle>
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <CheckBox IsChecked="{Binding IsCompleted, Mode=OneWay}"
+                                                          Command="{Binding DataContext.ToggleTodoCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                          CommandParameter="{Binding}"
+                                                          Width="22"
+                                                          Height="22"
+                                                          Margin="0,0,11,0"
+                                                          VerticalAlignment="Center"
+                                                          Cursor="Hand"
+                                                          ToolTip="切换完成状态" />
+                                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding Title}"
+                                                               FontSize="13.5"
+                                                               FontWeight="SemiBold"
+                                                               TextWrapping="Wrap"
+                                                               Foreground="{DynamicResource TextPrimaryBrush}">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="{x:Type TextBlock}">
+                                                                <Setter Property="Opacity" Value="1" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsCompleted}" Value="True">
+                                                                        <Setter Property="TextDecorations" Value="Strikethrough" />
+                                                                        <Setter Property="Opacity" Value="0.55" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                    <TextBlock Text="{Binding TimeLabel}"
+                                                               Margin="0,3,0,0"
+                                                               FontSize="10.5"
+                                                               Foreground="{DynamicResource TextMutedBrush}" />
+                                                </StackPanel>
+                                                <Button Grid.Column="2"
+                                                        Content="删除"
+                                                        Command="{Binding DataContext.DeleteTodoCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}"
+                                                        Style="{StaticResource GhostButtonStyle}"
+                                                        Height="28"
+                                                        Padding="10,0"
+                                                        Margin="10,0,0,0"
+                                                        VerticalAlignment="Center" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Grid>
+                        </Border>
                     </Grid>
 
                     <!-- Settings Page -->

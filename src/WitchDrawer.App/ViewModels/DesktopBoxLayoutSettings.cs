@@ -102,6 +102,33 @@ public sealed partial class DesktopBoxLayoutSettings : ObservableObject
 
     public Thickness ItemMargin => new(ItemSpacing);
 
+    // Mapping list mode follows the same density preset as grid mode. The formulas
+    // keep 5x5 at the original 310px / 32px baseline while allowing the other
+    // presets to grow or shrink the whole desktop widget consistently.
+    public double MappingListWidth => Math.Round(232 + (IconSize * 3), 1);
+
+    public double MappingListRowHeight => Math.Round(12 + (IconSize * 0.78), 1);
+
+    public double MappingListMinHeight => Math.Round(54 + (MappingListRowHeight * 2), 1);
+
+    public double MappingListMaxHeight => Math.Round(200 + (MappingListRowHeight * 10), 1);
+
+    public double MappingListIconSize => Math.Round(IconSize * 0.75, 1);
+
+    public double MappingListIconFrameSize => MappingListIconSize + 2;
+
+    public double MappingListIconColumnWidth => MappingListIconFrameSize + 4;
+
+    public double MappingListFontSize => Math.Round(14 + (IconSize / 13), 1);
+
+    public double MappingListFallbackFontSize => Math.Max(7, Math.Round(MappingListIconSize * 0.38, 1));
+
+    public Thickness MappingListItemPadding => new(
+        Math.Max(2, Math.Round(ItemSpacing + 1, 1)),
+        Math.Max(2, Math.Round(ItemSpacing + 2, 1)),
+        Math.Max(2, Math.Round(ItemSpacing + 1, 1)),
+        Math.Max(2, Math.Round(ItemSpacing + 2, 1)));
+
     public DesktopBoxLayoutSettings()
     {
         UpdateDimensions();
@@ -188,5 +215,15 @@ public sealed partial class DesktopBoxLayoutSettings : ObservableObject
         OnPropertyChanged(nameof(FallbackIconFontSize));
         OnPropertyChanged(nameof(IconFrameSize));
         OnPropertyChanged(nameof(ItemMargin));
+        OnPropertyChanged(nameof(MappingListWidth));
+        OnPropertyChanged(nameof(MappingListRowHeight));
+        OnPropertyChanged(nameof(MappingListMinHeight));
+        OnPropertyChanged(nameof(MappingListMaxHeight));
+        OnPropertyChanged(nameof(MappingListIconSize));
+        OnPropertyChanged(nameof(MappingListIconFrameSize));
+        OnPropertyChanged(nameof(MappingListIconColumnWidth));
+        OnPropertyChanged(nameof(MappingListFontSize));
+        OnPropertyChanged(nameof(MappingListFallbackFontSize));
+        OnPropertyChanged(nameof(MappingListItemPadding));
     }
 }

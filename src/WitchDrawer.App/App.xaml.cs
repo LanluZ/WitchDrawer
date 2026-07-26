@@ -52,6 +52,7 @@ public partial class App : Application
             var drawerService = new DrawerService(paths, repository);
             var launcher = new ShellFileLauncher();
             var desktopBoxLayoutSettings = new DesktopBoxLayoutSettings();
+            var todoService = new TodoService(repository);
             var updateService = new UpdateService(logger);
 
             logger.Info("Data directory: " + paths.RootDirectory);
@@ -62,7 +63,14 @@ public partial class App : Application
 
             var quickPanelViewModel = new QuickPanelViewModel(drawerService, launcher, logger);
             var quickPanel = new QuickPanelWindow(quickPanelViewModel);
-            var mainViewModel = new MainViewModel(drawerService, launcher, logger, quickPanelViewModel, desktopBoxLayoutSettings, updateService);
+            var mainViewModel = new MainViewModel(
+                drawerService,
+                launcher,
+                logger,
+                quickPanelViewModel,
+                desktopBoxLayoutSettings,
+                todoService,
+                updateService);
             desktopBoxLayoutSettings.SetPresetChangedCallback(mainViewModel.SaveLayoutPresetAsync);
             _desktopBoxManager = new DesktopBoxManager(drawerService, launcher, logger, desktopBoxLayoutSettings);
             _mainWindow = new MainWindow(mainViewModel, quickPanel, logger);

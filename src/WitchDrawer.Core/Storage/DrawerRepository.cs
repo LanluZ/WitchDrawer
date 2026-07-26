@@ -63,8 +63,19 @@ public sealed class DrawerRepository
                     Value TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS Todos (
+                    Id TEXT PRIMARY KEY,
+                    Title TEXT NOT NULL,
+                    IsCompleted INTEGER NOT NULL,
+                    SortOrder INTEGER NOT NULL,
+                    CreatedAt TEXT NOT NULL,
+                    UpdatedAt TEXT NOT NULL,
+                    CompletedAt TEXT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS IX_Items_BoxId ON Items(BoxId);
                 CREATE INDEX IF NOT EXISTS IX_Items_DisplayName ON Items(DisplayName);
+                CREATE INDEX IF NOT EXISTS IX_Todos_StateSort ON Todos(IsCompleted, SortOrder);
                 """,
                 cancellationToken);
 
@@ -359,6 +370,112 @@ public sealed class DrawerRepository
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<TodoItem>> GetTodosAsync(CancellationToken cancellationToken = default)
+    {
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT Id, Title, IsCompleted, SortOrder, CreatedAt, UpdatedAt, CompletedAt
+            FROM Todos
+            ORDER BY IsCompleted, SortOrder, CreatedAt;
+            """;
+
+        var todos = new List<TodoItem>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            todos.Add(ReadTodo(reader));
+        }
+
+        return todos;
+    }
+
+    public async Task<TodoItem?> GetTodoAsync(Guid todoId, CancellationToken cancellationToken = default)
+    {
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT Id, Title, IsCompleted, SortOrder, CreatedAt, UpdatedAt, CompletedAt
+            FROM Todos
+            WHERE Id = $id;
+            """;
+        command.Parameters.AddWithValue("$id", todoId.ToString());
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        return await reader.ReadAsync(cancellationToken) ? ReadTodo(reader) : null;
+    }
+
+    public async Task AddTodoAsync(TodoItem todo, CancellationToken cancellationToken = default)
+    {
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            INSERT INTO Todos (Id, Title, IsCompleted, SortOrder, CreatedAt, UpdatedAt, CompletedAt)
+            VALUES ($id, $title, $isCompleted, $sortOrder, $createdAt, $updatedAt, $completedAt);
+            """;
+        command.Parameters.AddWithValue("$id", todo.Id.ToString());
+        command.Parameters.AddWithValue("$title", todo.Title);
+        command.Parameters.AddWithValue("$isCompleted", todo.IsCompleted ? 1 : 0);
+        command.Parameters.AddWithValue("$sortOrder", todo.SortOrder);
+        command.Parameters.AddWithValue("$createdAt", ToDb(todo.CreatedAt));
+        command.Parameters.AddWithValue("$updatedAt", ToDb(todo.UpdatedAt));
+        command.Parameters.AddWithValue(
+            "$completedAt",
+            todo.CompletedAt is null ? DBNull.Value : ToDb(todo.CompletedAt.Value));
+
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task UpdateTodoCompletionAsync(
+        Guid todoId,
+        bool isCompleted,
+        DateTimeOffset? completedAt,
+        DateTimeOffset updatedAt,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            UPDATE Todos
+            SET IsCompleted = $isCompleted,
+                CompletedAt = $completedAt,
+                UpdatedAt = $updatedAt
+            WHERE Id = $id;
+            """;
+        command.Parameters.AddWithValue("$id", todoId.ToString());
+        command.Parameters.AddWithValue("$isCompleted", isCompleted ? 1 : 0);
+        command.Parameters.AddWithValue(
+            "$completedAt",
+            completedAt is null ? DBNull.Value : ToDb(completedAt.Value));
+        command.Parameters.AddWithValue("$updatedAt", ToDb(updatedAt));
+
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task RemoveTodoAsync(Guid todoId, CancellationToken cancellationToken = default)
+    {
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM Todos WHERE Id = $id;";
+        command.Parameters.AddWithValue("$id", todoId.ToString());
+
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
     public async Task<string?> GetSettingAsync(string key, CancellationToken cancellationToken = default)
     {
         await using var connection = CreateConnection();
@@ -408,6 +525,16 @@ public sealed class DrawerRepository
         var command = connection.CreateCommand();
         command.CommandText = "SELECT COALESCE(MAX(SortOrder), -1) + 1 FROM Items WHERE BoxId = $boxId;";
         command.Parameters.AddWithValue("$boxId", boxId.ToString());
+        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
+    }
+
+    public async Task<int> GetNextTodoSortOrderAsync(CancellationToken cancellationToken = default)
+    {
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+
+        var command = connection.CreateCommand();
+        command.CommandText = "SELECT COALESCE(MAX(SortOrder), -1) + 1 FROM Todos;";
         return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
     }
 
@@ -521,6 +648,18 @@ public sealed class DrawerRepository
             FromDb(reader.GetString(8)),
             reader.IsDBNull(9) ? null : reader.GetInt32(9),
             reader.IsDBNull(10) ? null : reader.GetInt32(10));
+    }
+
+    private static TodoItem ReadTodo(SqliteDataReader reader)
+    {
+        return new TodoItem(
+            Guid.Parse(reader.GetString(0)),
+            reader.GetString(1),
+            reader.GetInt32(2) != 0,
+            reader.GetInt32(3),
+            FromDb(reader.GetString(4)),
+            FromDb(reader.GetString(5)),
+            reader.IsDBNull(6) ? null : FromDb(reader.GetString(6)));
     }
 
     private static string ToDb(DateTimeOffset value)

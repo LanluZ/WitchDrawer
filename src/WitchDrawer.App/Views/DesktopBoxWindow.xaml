@@ -467,9 +467,9 @@
             <ListBox x:Name="FileList"
                      Grid.Row="1"
                      Panel.ZIndex="1"
-                     Width="310"
-                     MinHeight="118"
-                     MaxHeight="520"
+                     Width="{Binding LayoutSettings.MappingListWidth}"
+                     MinHeight="{Binding LayoutSettings.MappingListMinHeight}"
+                     MaxHeight="{Binding LayoutSettings.MappingListMaxHeight}"
                      Margin="0,2,0,8"
                      Padding="7,4"
                      HorizontalAlignment="Left"
@@ -501,8 +501,8 @@
                 </ListBox.Style>
                 <ListBox.ItemContainerStyle>
                     <Style TargetType="{x:Type ListBoxItem}">
-                        <Setter Property="Height" Value="32" />
-                        <Setter Property="Padding" Value="2,3" />
+                        <Setter Property="Height" Value="{Binding DataContext.LayoutSettings.MappingListRowHeight, RelativeSource={RelativeSource AncestorType={x:Type ListBox}}}" />
+                        <Setter Property="Padding" Value="{Binding DataContext.LayoutSettings.MappingListItemPadding, RelativeSource={RelativeSource AncestorType={x:Type ListBox}}}" />
                         <Setter Property="Margin" Value="0,1" />
                         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
@@ -535,16 +535,16 @@
                     <DataTemplate>
                         <Grid ToolTip="{Binding PathLabel}">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="26" />
+                                <ColumnDefinition Width="{Binding DataContext.LayoutSettings.MappingListIconColumnWidth, RelativeSource={RelativeSource AncestorType={x:Type ListBox}}}" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
-                            <Grid Width="22"
-                                  Height="22"
+                            <Grid Width="{Binding DataContext.LayoutSettings.MappingListIconFrameSize, RelativeSource={RelativeSource AncestorType={x:Type ListBox}}}"
+                                  Height="{Binding DataContext.LayoutSettings.MappingListIconFrameSize, RelativeSource={RelativeSource AncestorType={x:Type ListBox}}}"
                                   HorizontalAlignment="Center"
                                   VerticalAlignment="Center">
                                 <Image Source="{Binding IconImage}"
-                                       Width="20"
-                                       Height="20"
+                                       Width="{Binding DataContext.LayoutSettings.MappingListIconSize, RelativeSource={RelativeSource AncestorType={x:Type ListBox}}}"
+                                       Height="{Binding DataContext.LayoutSettings.MappingListIconSize, RelativeSource={RelativeSource AncestorType={x:Type ListBox}}}"
                                        Stretch="Uniform"
                                        RenderOptions.BitmapScalingMode="HighQuality"
                                        Visibility="{Binding HasIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
@@ -554,7 +554,7 @@
                                         Visibility="{Binding HasIcon, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
                                     <TextBlock Text="{Binding FallbackIconText}"
                                                Foreground="{DynamicResource AccentBrush}"
-                                               FontSize="7.5"
+                                               FontSize="{Binding DataContext.LayoutSettings.MappingListFallbackFontSize, RelativeSource={RelativeSource AncestorType={x:Type ListBox}}}"
                                                FontWeight="Bold"
                                                HorizontalAlignment="Center"
                                                VerticalAlignment="Center"
@@ -564,7 +564,7 @@
                             <TextBlock Grid.Column="1"
                                        Text="{Binding DisplayName}"
                                        Foreground="{DynamicResource TextPrimaryBrush}"
-                                       FontSize="16"
+                                       FontSize="{Binding DataContext.LayoutSettings.MappingListFontSize, RelativeSource={RelativeSource AncestorType={x:Type ListBox}}}"
                                        VerticalAlignment="Center"
                                        TextTrimming="CharacterEllipsis" />
                         </Grid>
