@@ -21,6 +21,13 @@ public sealed class TodoService
         return _repository.GetTodosAsync(boxId, cancellationToken);
     }
 
+    public Task<IReadOnlyList<TodoItem>> GetArchivedTodosAsync(
+        Guid? boxId = null,
+        CancellationToken cancellationToken = default)
+    {
+        return _repository.GetArchivedTodosAsync(boxId, cancellationToken);
+    }
+
     public async Task<TodoItem> AddTodoAsync(
         Guid boxId,
         string title,
@@ -81,6 +88,51 @@ public sealed class TodoService
     public Task DeleteTodoAsync(Guid todoId, CancellationToken cancellationToken = default)
     {
         return _repository.RemoveTodoAsync(todoId, cancellationToken);
+    }
+
+    public async Task<int> ArchiveCompletedAsync(
+        Guid boxId,
+        CancellationToken cancellationToken = default)
+    {
+        var box = await _repository.GetBoxAsync(boxId, cancellationToken)
+            ?? throw new InvalidOperationException("待办盒不存在或已被删除。");
+        if (box.Type != BoxType.Todo)
+        {
+            throw new InvalidOperationException("只能归档待办盒中的事项。");
+        }
+
+        return await _repository.ArchiveCompletedTodosAsync(
+            boxId,
+            DateTimeOffset.UtcNow,
+            cancellationToken);
+    }
+
+    public async Task<TodoItem> RestoreArchivedAsync(
+        Guid todoId,
+        CancellationToken cancellationToken = default)
+    {
+        var existing = await _repository.GetTodoAsync(todoId, cancellationToken)
+            ?? throw new InvalidOperationException("归档事项不存在或已被删除。");
+
+        if (!existing.IsArchived)
+        {
+            return existing;
+        }
+
+        var updatedAt = DateTimeOffset.UtcNow;
+        await _repository.UpdateTodoArchiveStateAsync(
+            todoId,
+            isArchived: false,
+            archivedAt: null,
+            updatedAt,
+            cancellationToken);
+
+        return existing with
+        {
+            IsArchived = false,
+            ArchivedAt = null,
+            UpdatedAt = updatedAt
+        };
     }
 
     private static string NormalizeTitle(string title)

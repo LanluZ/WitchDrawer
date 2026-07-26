@@ -8,4 +8,6 @@ public sealed record TodoItem(
     int SortOrder,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
-    DateTimeOffset? CompletedAt = null);
+    DateTimeOffset? CompletedAt = null,
+    bool IsArchived = false,
+    DateTimeOffset? ArchivedAt = null);

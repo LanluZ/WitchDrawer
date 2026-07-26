@@ -85,6 +85,56 @@ public sealed class TodoServiceTests
     }
 
     [Fact]
+    public async Task ArchiveCompletedAsync_HidesCompletedItemsAndRestoreReturnsThemToBox()
+    {
+        using var workspace = await TodoWorkspace.CreateAsync();
+
+        var active = await workspace.Service.AddTodoAsync(workspace.BoxId, "still active");
+        var completed = await workspace.Service.AddTodoAsync(workspace.BoxId, "ready to archive");
+        await workspace.Service.SetCompletedAsync(completed.Id, isCompleted: true);
+
+        var archivedCount = await workspace.Service.ArchiveCompletedAsync(workspace.BoxId);
+
+        Assert.Equal(1, archivedCount);
+        var remaining = Assert.Single(await workspace.Service.GetTodosAsync(workspace.BoxId));
+        Assert.Equal(active.Id, remaining.Id);
+
+        var reloadedService = new TodoService(new DrawerRepository(workspace.DatabasePath));
+        var archived = Assert.Single(await reloadedService.GetArchivedTodosAsync());
+        Assert.Equal(completed.Id, archived.Id);
+        Assert.True(archived.IsCompleted);
+        Assert.True(archived.IsArchived);
+        Assert.NotNull(archived.ArchivedAt);
+
+        var restored = await reloadedService.RestoreArchivedAsync(completed.Id);
+
+        Assert.False(restored.IsArchived);
+        Assert.Null(restored.ArchivedAt);
+        Assert.Empty(await reloadedService.GetArchivedTodosAsync());
+        Assert.Equal(
+            [active.Id, completed.Id],
+            (await reloadedService.GetTodosAsync(workspace.BoxId)).Select(item => item.Id));
+    }
+
+    [Fact]
+    public async Task ArchiveCompletedAsync_ArchivesOnlyTheRequestedTodoBox()
+    {
+        using var workspace = await TodoWorkspace.CreateAsync();
+        var secondBox = await workspace.DrawerService.CreateBoxAsync("second todo", BoxType.Todo);
+        var firstBoxTodo = await workspace.Service.AddTodoAsync(workspace.BoxId, "first box");
+        var secondBoxTodo = await workspace.Service.AddTodoAsync(secondBox.Id, "second box");
+        await workspace.Service.SetCompletedAsync(firstBoxTodo.Id, isCompleted: true);
+        await workspace.Service.SetCompletedAsync(secondBoxTodo.Id, isCompleted: true);
+
+        await workspace.Service.ArchiveCompletedAsync(workspace.BoxId);
+
+        Assert.Empty(await workspace.Service.GetTodosAsync(workspace.BoxId));
+        Assert.Single(await workspace.Service.GetTodosAsync(secondBox.Id));
+        var archived = Assert.Single(await workspace.Service.GetArchivedTodosAsync(workspace.BoxId));
+        Assert.Equal(firstBoxTodo.Id, archived.Id);
+    }
+
+    [Fact]
     public async Task TodoBoxes_KeepIndependentListsAndCascadeOnBoxDelete()
     {
         using var workspace = await TodoWorkspace.CreateAsync();

@@ -59,6 +59,7 @@ public sealed class DesktopBoxViewModel : ObservableObject
         UseMappingListModeCommand = new AsyncRelayCommand(() => SetMappingViewModeAsync(useListMode: true));
         AddTodoCommand = new AsyncRelayCommand(AddTodoAsync, CanAddTodo);
         ToggleTodoCommand = new AsyncRelayCommand<TodoItemViewModel?>(ToggleTodoAsync);
+        ArchiveCompletedTodosCommand = new AsyncRelayCommand(ArchiveCompletedTodosAsync, CanArchiveCompletedTodos);
         DeleteTodoCommand = new AsyncRelayCommand<TodoItemViewModel?>(DeleteTodoAsync);
         UpdateGridCanvasSize();
         _ = LoadMappingViewModeAsync();
@@ -85,6 +86,8 @@ public sealed class DesktopBoxViewModel : ObservableObject
     public IAsyncRelayCommand AddTodoCommand { get; }
 
     public IAsyncRelayCommand<TodoItemViewModel?> ToggleTodoCommand { get; }
+
+    public IAsyncRelayCommand ArchiveCompletedTodosCommand { get; }
 
     public IAsyncRelayCommand<TodoItemViewModel?> DeleteTodoCommand { get; }
 
@@ -139,6 +142,8 @@ public sealed class DesktopBoxViewModel : ObservableObject
     }
 
     public int TodoRemainingCount => TodoItems.Count(todo => !todo.IsCompleted);
+
+    public int TodoCompletedCount => TodoItems.Count(todo => todo.IsCompleted);
 
     public double GridCanvasWidth
     {
@@ -206,6 +211,7 @@ public sealed class DesktopBoxViewModel : ObservableObject
         OnPropertyChanged(nameof(IsEmpty));
         OnPropertyChanged(nameof(ShowFileEmptyState));
         AddTodoCommand.NotifyCanExecuteChanged();
+        ArchiveCompletedTodosCommand.NotifyCanExecuteChanged();
     }
 
     public (int Column, int Row) GetGridSlot(
@@ -399,6 +405,20 @@ public sealed class DesktopBoxViewModel : ObservableObject
         });
     }
 
+    private bool CanArchiveCompletedTodos()
+    {
+        return IsTodoBox && !IsBusy && TodoCompletedCount > 0;
+    }
+
+    private async Task ArchiveCompletedTodosAsync()
+    {
+        await RunTodoOperationAsync(async () =>
+        {
+            var archivedCount = await _todoService.ArchiveCompletedAsync(BoxId);
+            StatusText = archivedCount == 0 ? "没有可归档事项" : $"已归档 {archivedCount} 项";
+        });
+    }
+
     private async Task DeleteTodoAsync(TodoItemViewModel? todo)
     {
         if (todo is null || !IsTodoBox)
@@ -424,6 +444,7 @@ public sealed class DesktopBoxViewModel : ObservableObject
         {
             IsBusy = true;
             AddTodoCommand.NotifyCanExecuteChanged();
+            ArchiveCompletedTodosCommand.NotifyCanExecuteChanged();
             await operation();
             await LoadTodoItemsAsync();
             ItemsChanged?.Invoke(this, EventArgs.Empty);
@@ -437,6 +458,7 @@ public sealed class DesktopBoxViewModel : ObservableObject
         {
             IsBusy = false;
             AddTodoCommand.NotifyCanExecuteChanged();
+            ArchiveCompletedTodosCommand.NotifyCanExecuteChanged();
         }
     }
 
@@ -452,7 +474,9 @@ public sealed class DesktopBoxViewModel : ObservableObject
         StatusText = TodoItems.Count == 0 ? "添加待办" : "已同步";
         OnPropertyChanged(nameof(ItemCountLabel));
         OnPropertyChanged(nameof(TodoRemainingCount));
+        OnPropertyChanged(nameof(TodoCompletedCount));
         OnPropertyChanged(nameof(ShowFileEmptyState));
+        ArchiveCompletedTodosCommand.NotifyCanExecuteChanged();
     }
 
     public Task ImportPathsAsync(IEnumerable<string> paths)

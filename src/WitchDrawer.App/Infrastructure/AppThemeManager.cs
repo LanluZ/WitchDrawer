@@ -39,25 +39,25 @@ public static class AppThemeManager
         }
         else if (theme == AppTheme.Crystal)
         {
-            SetColor("AppBackgroundBrush", "#66FFFFFF");  // High transparent crystal white
-            SetColor("PanelBrush", "#4DFFFFFF");          // Very translucent card panel
-            SetColor("PanelAltBrush", "#33FFFFFF");       // Ultra translucent sidebar
-            SetColor("BorderBrushSoft", "#40FFFFFF");     // Frosted glass border
+            SetColor("AppBackgroundBrush", "#B8F3F8FC");  // Readable crystal veil over wallpapers
+            SetColor("PanelBrush", "#B8FFFFFF");          // Stable content surface
+            SetColor("PanelAltBrush", "#94F7FAFC");       // Distinct but lightweight sidebar
+            SetColor("BorderBrushSoft", "#A6FFFFFF");     // Crisp crystal edge
             SetColor("TextPrimaryBrush", "#111827");      // Dark slate text
             SetColor("TextMutedBrush", "#4B5563");        // Muted slate text
             SetColor("AccentBrush", "#0EA5E9");           // Clear Sky Blue
-            SetColor("AccentSoftBrush", "#330EA5E9");     // Translucent Sky Blue tint
-            SetColor("GlassSurfaceBrush", "#4DFFFFFF");   // Very light floating surface
-            SetColor("GlassInnerBrush", "#26FFFFFF");     // Barely visible inner glass
-            SetColor("GlassStrokeBrush", "#66FFFFFF");    // Pronounced crystal outline
+            SetColor("AccentSoftBrush", "#400EA5E9");     // Translucent Sky Blue tint
+            SetColor("GlassSurfaceBrush", "#A6FFFFFF");   // Readable floating surface
+            SetColor("GlassInnerBrush", "#73FFFFFF");     // Quiet inner glass
+            SetColor("GlassStrokeBrush", "#A6FFFFFF");    // Pronounced crystal outline
             SetColor("PositiveBrush", "#10B981");         // Emerald green
             SetColor("PositiveSoftBrush", "#3310B981");   // Translucent green
             SetColor("DangerBrush", "#EF4444");           // Rose red
             SetColor("DangerSoftBrush", "#33EF4444");     // Translucent red
-            SetColor("HoverBrush", "#40FFFFFF");          // Crystal light glare hover
+            SetColor("HoverBrush", "#80FFFFFF");          // Crystal light glare hover
             SetColor("CardShadowBrush", "#1A000000");     // Very soft shadow
-            SetColor("DropZoneBrush", "#1AFFFFFF");       // Translucent drop-zone
-            SetColor("WindowOverlayBrush", "#33FFFFFF");  // Light dimming overlay
+            SetColor("DropZoneBrush", "#66FFFFFF");       // Calm, readable drop-zone
+            SetColor("WindowOverlayBrush", "#66FFFFFF");  // Light wallpaper veil
         }
         else
         {

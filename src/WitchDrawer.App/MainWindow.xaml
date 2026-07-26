@@ -16,19 +16,26 @@
         SnapsToDevicePixels="True"
         Drop="OnFilesDropped"
         PreviewDragOver="OnPreviewDragOver">
-    <Border Margin="15"
+    <Border Margin="12"
             Background="{DynamicResource AppBackgroundBrush}"
             BorderBrush="{DynamicResource BorderBrushSoft}"
-            BorderThickness="1.5"
+            BorderThickness="1"
             CornerRadius="24">
         <Border.Effect>
-            <DropShadowEffect BlurRadius="22" Color="#000000" Opacity="0.25" ShadowDepth="3" Direction="270" />
+            <DropShadowEffect BlurRadius="18" Color="#000000" Opacity="0.18" ShadowDepth="2" Direction="270" />
         </Border.Effect>
         <Grid>
             <Grid.RowDefinitions>
-                <RowDefinition Height="52" />
+                <RowDefinition Height="56" />
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
+
+            <Border Grid.Row="0"
+                    Background="{DynamicResource PanelAltBrush}"
+                    BorderBrush="{DynamicResource BorderBrushSoft}"
+                    BorderThickness="0,0,0,1"
+                    CornerRadius="24,24,0,0"
+                    IsHitTestVisible="False" />
 
             <!-- Top Header & Custom Window Chrome -->
             <Grid Grid.Row="0" MouseLeftButtonDown="OnShellHeaderMouseLeftButtonDown" Background="Transparent">
@@ -39,32 +46,38 @@
                 </Grid.ColumnDefinitions>
 
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="22,0,0,0">
-                    <Border Width="26" Height="26" CornerRadius="8" ClipToBounds="True" Background="Transparent">
-                        <Image Source="/Assets/app.png" RenderOptions.BitmapScalingMode="HighQuality" Width="26" Height="26" />
+                    <Border Width="28" Height="28" CornerRadius="8" ClipToBounds="True" Background="Transparent">
+                        <Image Source="/Assets/app.png" RenderOptions.BitmapScalingMode="HighQuality" Width="28" Height="28" />
                     </Border>
                     <TextBlock Text="WitchDrawer"
-                               Margin="12,0,0,0"
+                               Margin="10,0,0,0"
                                VerticalAlignment="Center"
                                Foreground="{DynamicResource TextPrimaryBrush}"
-                               FontSize="14"
+                               FontSize="15"
                                FontWeight="Bold"
                                />
                 </StackPanel>
 
-                <TextBlock Grid.Column="1"
-                           Text="{Binding StatusText}"
-                           HorizontalAlignment="Center"
-                           VerticalAlignment="Center"
-                           Foreground="{DynamicResource TextMutedBrush}"
-                           FontSize="12.5"
-                           FontWeight="Medium" />
+                <Border Grid.Column="1"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Background="{DynamicResource PanelBrush}"
+                        BorderBrush="{DynamicResource BorderBrushSoft}"
+                        BorderThickness="1"
+                        CornerRadius="11"
+                        Padding="12,5">
+                    <TextBlock Text="{Binding StatusText}"
+                               Foreground="{DynamicResource TextMutedBrush}"
+                               FontSize="11.5"
+                               FontWeight="Medium" />
+                </Border>
 
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,22,0">
                     <Border Background="{DynamicResource PanelBrush}"
                             BorderBrush="{DynamicResource BorderBrushSoft}"
                             BorderThickness="1"
-                            CornerRadius="10"
-                            Padding="8,3.5"
+                            CornerRadius="11"
+                            Padding="10,5"
                             Margin="0,0,14,0">
                         <TextBlock Text="Ctrl+Alt+W"
                                    Foreground="{DynamicResource TextMutedBrush}"
@@ -127,22 +140,23 @@
                         BorderThickness="0,1,1,0"
                         CornerRadius="0,0,0,24"
                         Padding="18,18,18,22">
-                    <DockPanel>
+                    <Grid>
                         <!-- Navigation Tabs Local Resources -->
-                        <DockPanel.Resources>
+                        <Grid.Resources>
                             <Style x:Key="NavButtonBaseStyle" TargetType="{x:Type Button}">
                                 <Setter Property="Background" Value="Transparent" />
                                 <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}" />
                                 <Setter Property="BorderThickness" Value="0" />
-                                <Setter Property="MinHeight" Value="34" />
-                                <Setter Property="Padding" Value="16,7" />
+                                <Setter Property="MinHeight" Value="32" />
+                                <Setter Property="Padding" Value="14,6" />
                                 <Setter Property="Cursor" Value="Hand" />
+                                <Setter Property="FocusVisualStyle" Value="{x:Null}" />
                                 <Setter Property="Template">
                                     <Setter.Value>
                                         <ControlTemplate TargetType="{x:Type Button}">
                                             <Border x:Name="Root"
                                                     Background="{TemplateBinding Background}"
-                                                    CornerRadius="14"
+                                                    CornerRadius="9"
                                                     Padding="{TemplateBinding Padding}">
                                                 <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                                             </Border>
@@ -165,20 +179,30 @@
                                 <Style.Triggers>
                                     <MultiDataTrigger>
                                         <MultiDataTrigger.Conditions>
+                                            <Condition Binding="{Binding IsArchivePage}" Value="False" />
                                             <Condition Binding="{Binding IsSettingsPage}" Value="False" />
                                             <Condition Binding="{Binding IsAboutPage}" Value="False" />
                                         </MultiDataTrigger.Conditions>
-                                        <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
-                                        <Setter Property="Foreground" Value="White" />
+                                        <Setter Property="Background" Value="{DynamicResource AccentSoftBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
                                         <Setter Property="FontWeight" Value="SemiBold" />
                                     </MultiDataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                            <Style x:Key="NavArchiveButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource NavButtonBaseStyle}">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsArchivePage}" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource AccentSoftBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+                                        <Setter Property="FontWeight" Value="SemiBold" />
+                                    </DataTrigger>
                                 </Style.Triggers>
                             </Style>
                             <Style x:Key="NavSettingsButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource NavButtonBaseStyle}">
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsSettingsPage}" Value="True">
-                                        <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
-                                        <Setter Property="Foreground" Value="White" />
+                                        <Setter Property="Background" Value="{DynamicResource AccentSoftBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
                                         <Setter Property="FontWeight" Value="SemiBold" />
                                     </DataTrigger>
                                 </Style.Triggers>
@@ -186,76 +210,98 @@
                             <Style x:Key="NavAboutButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource NavButtonBaseStyle}">
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsAboutPage}" Value="True">
-                                        <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
-                                        <Setter Property="Foreground" Value="White" />
+                                        <Setter Property="Background" Value="{DynamicResource AccentSoftBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
                                         <Setter Property="FontWeight" Value="SemiBold" />
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
-                        </DockPanel.Resources>
+                        </Grid.Resources>
 
-                        <StackPanel DockPanel.Dock="Top">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <StackPanel Grid.Row="0">
                             <!-- Nav Control -->
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,20" HorizontalAlignment="Center">
-                                <Button Content="概览"
-                                        Command="{Binding ShowDashboardCommand}"
-                                        Style="{StaticResource NavOverviewButtonStyle}"
-                                        Margin="0,0,8,0" />
-                                <Button Content="设置"
-                                        Command="{Binding ShowSettingsCommand}"
-                                        Style="{StaticResource NavSettingsButtonStyle}"
-                                        Margin="0,0,8,0" />
-                                <Button Content="关于"
-                                        Command="{Binding ShowAboutCommand}"
-                                        Style="{StaticResource NavAboutButtonStyle}" />
-                            </StackPanel>
+                            <Border Margin="0,0,0,20"
+                                    Padding="3"
+                                    Background="{DynamicResource PanelBrush}"
+                                    BorderBrush="{DynamicResource BorderBrushSoft}"
+                                    BorderThickness="1"
+                                    CornerRadius="12"
+                                    HorizontalAlignment="Stretch">
+                                <UniformGrid Columns="4">
+                                    <Button Content="概览"
+                                            Command="{Binding ShowDashboardCommand}"
+                                            Style="{StaticResource NavOverviewButtonStyle}"
+                                            Margin="0,0,2,0" />
+                                    <Button Content="归档"
+                                            Command="{Binding ShowArchiveCommand}"
+                                            Style="{StaticResource NavArchiveButtonStyle}"
+                                            Margin="0,0,2,0" />
+                                    <Button Content="设置"
+                                            Command="{Binding ShowSettingsCommand}"
+                                            Style="{StaticResource NavSettingsButtonStyle}"
+                                            Margin="0,0,2,0" />
+                                    <Button Content="关于"
+                                            Command="{Binding ShowAboutCommand}"
+                                            Style="{StaticResource NavAboutButtonStyle}" />
+                                </UniformGrid>
+                            </Border>
 
                             <TextBlock Text="收纳盒列表"
                                        FontSize="12"
                                        FontWeight="Bold"
                                        Foreground="{DynamicResource TextMutedBrush}"
-                                       Margin="6,0,0,12"
+                                       Margin="6,0,0,9"
                                        />
+                        </StackPanel>
 
                             <ListBox x:Name="BoxesList"
+                                     Grid.Row="1"
                                      ItemsSource="{Binding Boxes}"
                                      SelectedItem="{Binding SelectedBox, Mode=TwoWay}"
                                      SelectionChanged="OnBoxesSelectionChanged"
                                      MouseDoubleClick="OnBoxesMouseDoubleClick"
                                      ScrollViewer.CanContentScroll="True"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                     ScrollViewer.VerticalScrollBarVisibility="Auto"
                                      VirtualizingPanel.IsVirtualizing="True"
                                      VirtualizingPanel.VirtualizationMode="Recycling"
-                                     MaxHeight="360">
+                                     Margin="0,0,0,10">
                                 <ListBox.ItemContainerStyle>
                                     <Style TargetType="{x:Type ListBoxItem}">
-                                        <Setter Property="MinHeight" Value="52" />
-                                        <Setter Property="Padding" Value="10,8" />
+                                        <Setter Property="MinHeight" Value="50" />
+                                        <Setter Property="Padding" Value="9,7" />
                                         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
                                         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                                         <Setter Property="Template">
                                             <Setter.Value>
                                                 <ControlTemplate TargetType="{x:Type ListBoxItem}">
                                                     <Border x:Name="Root"
-                                                            Margin="2,3"
+                                                            Margin="0,2"
                                                             Padding="{TemplateBinding Padding}"
                                                             Background="Transparent"
                                                             BorderThickness="1"
                                                             BorderBrush="Transparent"
-                                                            CornerRadius="12">
+                                                            CornerRadius="11">
                                                         <Grid>
                                                             <Grid.ColumnDefinitions>
                                                                 <ColumnDefinition Width="Auto" />
                                                                 <ColumnDefinition Width="*" />
                                                             </Grid.ColumnDefinitions>
                                                             <Border x:Name="Indicator"
-                                                                    Width="3.5"
-                                                                    Height="18"
+                                                                    Width="3"
+                                                                    Height="20"
                                                                     Background="{DynamicResource AccentBrush}"
                                                                     CornerRadius="2"
                                                                     HorizontalAlignment="Left"
                                                                     VerticalAlignment="Center"
                                                                     Visibility="Collapsed"
-                                                                    Margin="-4,0,8,0" />
+                                                                    Margin="-3,0,8,0" />
                                                             <ContentPresenter Grid.Column="1" />
                                                         </Grid>
                                                     </Border>
@@ -265,7 +311,7 @@
                                                         </Trigger>
                                                         <Trigger Property="IsSelected" Value="True">
                                                             <Setter TargetName="Root" Property="Background" Value="{DynamicResource AccentSoftBrush}" />
-                                                            <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource BorderBrushSoft}" />
+                                                            <Setter TargetName="Root" Property="BorderBrush" Value="Transparent" />
                                                             <Setter TargetName="Indicator" Property="Visibility" Value="Visible" />
                                                         </Trigger>
                                                     </ControlTemplate.Triggers>
@@ -316,9 +362,8 @@
                                     </DataTemplate>
                                 </ListBox.ItemTemplate>
                             </ListBox>
-                        </StackPanel>
 
-                        <StackPanel DockPanel.Dock="Bottom" VerticalAlignment="Bottom">
+                        <StackPanel Grid.Row="2" VerticalAlignment="Bottom">
                             <Button x:Name="BtnCreateBox"
                                     Style="{StaticResource PrimaryButtonStyle}"
                                     Click="OnCreateBoxClicked"
@@ -355,11 +400,11 @@
                                 </Border>
                             </Popup>
                         </StackPanel>
-                    </DockPanel>
+                    </Grid>
                 </Border>
 
                 <!-- Right Content Area -->
-                <Grid Grid.Column="1" Margin="28,24,28,24" VerticalAlignment="Stretch">
+                <Grid Grid.Column="1" Margin="24,20,24,22" VerticalAlignment="Stretch">
                     <!-- Dashboard Page -->
                     <Grid VerticalAlignment="Stretch">
                         <Grid.Style>
@@ -372,6 +417,9 @@
                                     <DataTrigger Binding="{Binding IsAboutPage}" Value="True">
                                         <Setter Property="Visibility" Value="Collapsed" />
                                     </DataTrigger>
+                                    <DataTrigger Binding="{Binding IsArchivePage}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
                                 </Style.Triggers>
                             </Style>
                         </Grid.Style>
@@ -381,24 +429,24 @@
                         </Grid.RowDefinitions>
 
                         <!-- Dashboard Info Header -->
-                        <Grid Grid.Row="0" Margin="0,0,0,24">
+                        <Grid Grid.Row="0" Margin="0,0,0,18">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <StackPanel>
                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                    <Ellipse Width="6" Height="6" Fill="{DynamicResource AccentBrush}" Margin="0,0,6,0" VerticalAlignment="Center" />
-                                    <TextBlock Text="Overview"
+                                    <Ellipse Width="5" Height="5" Fill="{DynamicResource AccentBrush}" Margin="0,0,7,0" VerticalAlignment="Center" />
+                                    <TextBlock Text="收纳概览"
                                                Foreground="{DynamicResource TextMutedBrush}"
-                                               FontSize="12"
+                                               FontSize="11.5"
                                                FontWeight="Bold"
                                                />
                                 </StackPanel>
                                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,4,0,0">
                                     <TextBlock Text="{Binding SelectedBox.Name, TargetNullValue=选择一个收纳盒}"
                                                Foreground="{DynamicResource TextPrimaryBrush}"
-                                               FontSize="28"
+                                               FontSize="26"
                                                FontWeight="Bold" />
                                     
                                     <!-- 重命名收纳盒悬浮按钮与浮窗 -->
@@ -457,29 +505,29 @@
                             </StackPanel>
 
                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Bottom">
-                                <Border Background="{DynamicResource PanelBrush}"
-                                        BorderBrush="{DynamicResource BorderBrushSoft}"
+                                <Border Background="{DynamicResource AccentSoftBrush}"
+                                        BorderBrush="Transparent"
                                         BorderThickness="1"
-                                        CornerRadius="14"
-                                        Padding="12,7"
-                                        Margin="0,0,10,0">
+                                        CornerRadius="11"
+                                        Padding="11,6"
+                                        Margin="0,0,8,0">
                                     <StackPanel Orientation="Horizontal">
                                         <Path Data="M 1,4 L 10,1 L 19,4 L 19,15 L 10,18 L 1,15 Z M 1,4 L 10,7 L 19,4 M 10,7 L 10,18" 
-                                              Stroke="{DynamicResource TextMutedBrush}" StrokeThickness="1.2" Width="12" Height="12" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                              Stroke="{DynamicResource AccentBrush}" StrokeThickness="1.2" Width="12" Height="12" VerticalAlignment="Center" Margin="0,0,6,0" />
                                         <TextBlock Text="{Binding Boxes.Count, StringFormat={}{0} 个收纳盒}"
-                                                   Foreground="{DynamicResource TextMutedBrush}" FontSize="12.5" />
+                                                   Foreground="{DynamicResource AccentBrush}" FontSize="11.5" FontWeight="SemiBold" />
                                     </StackPanel>
                                 </Border>
                                 <Border Background="{DynamicResource PanelBrush}"
                                         BorderBrush="{DynamicResource BorderBrushSoft}"
                                         BorderThickness="1"
-                                        CornerRadius="14"
-                                        Padding="12,7">
+                                        CornerRadius="11"
+                                        Padding="11,6">
                                     <StackPanel Orientation="Horizontal">
                                         <Path Data="M 2,1 L 9,1 L 13,5 L 13,14 L 2,14 Z M 9,1 L 9,5 L 13,5" 
                                               Stroke="{DynamicResource TextMutedBrush}" StrokeThickness="1.2" Width="11" Height="12" VerticalAlignment="Center" Margin="0,0,6,0" />
                                         <TextBlock Text="{Binding Items.Count, StringFormat={}{0} 个文件}"
-                                                   Foreground="{DynamicResource TextMutedBrush}" FontSize="12.5" />
+                                                   Foreground="{DynamicResource TextMutedBrush}" FontSize="11.5" FontWeight="SemiBold" />
                                     </StackPanel>
                                 </Border>
                             </StackPanel>
@@ -487,8 +535,8 @@
 
                         <Grid Grid.Row="1" VerticalAlignment="Stretch">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="230" />
-                                <ColumnDefinition Width="20" />
+                                <ColumnDefinition Width="220" />
+                                <ColumnDefinition Width="16" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
 
@@ -502,34 +550,35 @@
 
                                 <!-- 顶部精美渐变桌面状态卡片 -->
                                 <Border Grid.Row="0"
-                                        Background="{DynamicResource AccentBrush}"
-                                        CornerRadius="20"
-                                        Margin="0,0,0,12">
+                                        Background="{DynamicResource AccentSoftBrush}"
+                                        BorderBrush="{DynamicResource BorderBrushSoft}"
+                                        BorderThickness="1"
+                                        CornerRadius="16"
+                                        Margin="0,0,0,10">
                                     <Grid>
-                                        <Border CornerRadius="20" IsHitTestVisible="False">
+                                        <Border CornerRadius="16" IsHitTestVisible="False" Opacity="0.45">
                                             <Border.Background>
                                                 <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                                    <GradientStop Color="#33FFFFFF" Offset="0" />
-                                                    <GradientStop Color="#00FFFFFF" Offset="0.6" />
-                                                    <GradientStop Color="#1A000000" Offset="1" />
+                                                    <GradientStop Color="#66FFFFFF" Offset="0" />
+                                                    <GradientStop Color="#00FFFFFF" Offset="0.7" />
+                                                    <GradientStop Color="#140EA5E9" Offset="1" />
                                                 </LinearGradientBrush>
                                             </Border.Background>
                                         </Border>
-                                        <StackPanel Margin="12">
+                                        <StackPanel Margin="14,12">
                                             <TextBlock Text="桌面收纳栏"
-                                                       Foreground="White"
-                                                       FontSize="12"
-                                                       FontWeight="SemiBold"
-                                                       Opacity="0.9" />
-                                            <TextBlock Text="{Binding Boxes.Count}"
-                                                       Foreground="White"
-                                                       FontSize="24"
-                                                       FontWeight="Bold"
-                                                       Margin="0,2,0,0" />
-                                            <TextBlock Text="所有收纳盒已同步到桌面"
-                                                       Foreground="White"
+                                                       Foreground="{DynamicResource TextMutedBrush}"
                                                        FontSize="11.5"
-                                                       Opacity="0.85"
+                                                       FontWeight="SemiBold"
+                                                       />
+                                            <TextBlock Text="{Binding Boxes.Count}"
+                                                       Foreground="{DynamicResource AccentBrush}"
+                                                       FontSize="26"
+                                                       FontWeight="Bold"
+                                                       Margin="0,1,0,0" />
+                                            <TextBlock Text="所有收纳盒已同步到桌面"
+                                                       Foreground="{DynamicResource TextMutedBrush}"
+                                                       FontSize="10.5"
                                                        Margin="0,2,0,0" />
                                         </StackPanel>
                                     </Grid>
@@ -540,9 +589,9 @@
                                         Background="{DynamicResource PanelBrush}"
                                         BorderBrush="{DynamicResource BorderBrushSoft}"
                                         BorderThickness="1"
-                                        CornerRadius="18"
-                                        Padding="12,12"
-                                        Margin="0,0,0,12">
+                                        CornerRadius="16"
+                                        Padding="13"
+                                        Margin="0,0,0,10">
                                     <StackPanel>
                                         <!-- 第一层：当前模式与删除小按钮的左右并排 -->
                                         <Grid>
@@ -632,8 +681,8 @@
                                         <!-- 极简精致微透分割线 -->
                                         <Border Height="1" 
                                                 Background="{DynamicResource BorderBrushSoft}" 
-                                                Margin="0,10,0,10" 
-                                                Opacity="0.6" />
+                                                Margin="0,11,0,11"
+                                                Opacity="0.45" />
 
                                         <!-- 第二层：桌面图标排列密度左右并排布局，极速压缩高度 -->
                                         <Grid>
@@ -694,28 +743,31 @@
                                 <!-- 投放区 (去除硬编码高度，高度由 Grid 自动伸缩拉长并保持居中，实现与右侧完美对称对齐！) -->
                                 <Border Grid.Row="2"
                                         Background="{DynamicResource DropZoneBrush}"
-                                        BorderThickness="0"
-                                        CornerRadius="18"
+                                        BorderBrush="{DynamicResource BorderBrushSoft}"
+                                        BorderThickness="1"
+                                        CornerRadius="16"
                                         MinHeight="82"
                                         VerticalAlignment="Stretch">
                                     <Grid>
                                         <Rectangle Stroke="{DynamicResource BorderBrushSoft}"
-                                                   StrokeThickness="1.5"
-                                                   StrokeDashArray="4 3"
-                                                   RadiusX="18"
-                                                   RadiusY="18" />
+                                                   StrokeThickness="1"
+                                                   StrokeDashArray="3 4"
+                                                   RadiusX="15"
+                                                   RadiusY="15"
+                                                   Margin="4"
+                                                   Opacity="0.8" />
                                         <StackPanel Margin="8" HorizontalAlignment="Center" VerticalAlignment="Center">
                                             <Path Data="M 6,1 L 6,11 M 2,7 L 6,11 L 10,7 M 1,14 L 11,14" 
                                                   Stroke="{DynamicResource AccentBrush}" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" 
-                                                  Width="12" Height="14" HorizontalAlignment="Center" Margin="0,0,0,4" SnapsToDevicePixels="True" />
+                                                  Width="12" Height="14" HorizontalAlignment="Center" Margin="0,0,0,6" SnapsToDevicePixels="True" />
                                             <TextBlock Text="投放区"
                                                        Foreground="{DynamicResource TextPrimaryBrush}"
-                                                       FontSize="13"
-                                                       FontWeight="Bold"
+                                                       FontSize="12.5"
+                                                       FontWeight="SemiBold"
                                                        HorizontalAlignment="Center" />
                                             <TextBlock Text="拖入文件至此快速归纳"
                                                        Margin="0,2,0,0"
-                                                       FontSize="10.5"
+                                                       FontSize="10"
                                                        Foreground="{DynamicResource TextMutedBrush}"
                                                        HorizontalAlignment="Center" />
                                         </StackPanel>
@@ -728,20 +780,31 @@
                                     Background="{DynamicResource PanelBrush}"
                                     BorderBrush="{DynamicResource BorderBrushSoft}"
                                     BorderThickness="1"
-                                    CornerRadius="20"
-                                    Padding="18">
+                                    CornerRadius="16"
+                                    Padding="14">
                                 <DockPanel>
-                                    <Grid DockPanel.Dock="Top" Margin="4,2,4,14">
-                                        <TextBlock Text="文件视图"
-                                                   Foreground="{DynamicResource TextMutedBrush}"
-                                                   FontSize="12"
-                                                   FontWeight="Bold"
-                                                   />
-                                        <TextBlock Text="{Binding Items.Count, StringFormat={}{0} 项}"
-                                                   HorizontalAlignment="Right"
-                                                   FontSize="12"
-                                                   FontWeight="SemiBold"
-                                                   Foreground="{DynamicResource TextMutedBrush}" />
+                                    <Grid DockPanel.Dock="Top" Margin="3,1,3,11">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Rectangle Width="3"
+                                                       Height="14"
+                                                       RadiusX="1.5"
+                                                       RadiusY="1.5"
+                                                       Fill="{DynamicResource AccentBrush}"
+                                                       Margin="0,0,7,0" />
+                                            <TextBlock Text="文件内容"
+                                                       Foreground="{DynamicResource TextPrimaryBrush}"
+                                                       FontSize="12"
+                                                       FontWeight="SemiBold" />
+                                        </StackPanel>
+                                        <Border HorizontalAlignment="Right"
+                                                Background="{DynamicResource PanelAltBrush}"
+                                                CornerRadius="8"
+                                                Padding="7,2">
+                                            <TextBlock Text="{Binding Items.Count, StringFormat={}{0} 项}"
+                                                       FontSize="10.5"
+                                                       FontWeight="SemiBold"
+                                                       Foreground="{DynamicResource TextMutedBrush}" />
+                                        </Border>
                                     </Grid>
 
                                     <Grid>
@@ -775,9 +838,9 @@
                                                  Visibility="{Binding Items.Count, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
                                             <ListBox.ItemContainerStyle>
                                                 <Style TargetType="{x:Type ListBoxItem}">
-                                                    <Setter Property="MinHeight" Value="46" />
-                                                    <Setter Property="Padding" Value="8,6" />
-                                                    <Setter Property="Margin" Value="0,2,0,2" />
+                                                    <Setter Property="MinHeight" Value="44" />
+                                                    <Setter Property="Padding" Value="7,5" />
+                                                    <Setter Property="Margin" Value="0,1" />
                                                     <Setter Property="FocusVisualStyle" Value="{x:Null}" />
                                                     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                                                     <Setter Property="Template">
@@ -786,16 +849,16 @@
                                                                 <!-- Card border -->
                                                                 <Border x:Name="Root"
                                                                         Background="Transparent"
-                                                                        BorderBrush="{DynamicResource BorderBrushSoft}"
+                                                                        BorderBrush="Transparent"
                                                                         BorderThickness="1"
-                                                                        CornerRadius="14"
+                                                                        CornerRadius="10"
                                                                         Padding="{TemplateBinding Padding}">
                                                                     <ContentPresenter />
                                                                 </Border>
                                                                 <ControlTemplate.Triggers>
                                                                     <Trigger Property="IsMouseOver" Value="True">
                                                                         <Setter TargetName="Root" Property="Background" Value="{DynamicResource HoverBrush}" />
-                                                                        <Setter TargetName="Root" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                                                                        <Setter TargetName="Root" Property="BorderBrush" Value="Transparent" />
                                                                     </Trigger>
                                                                     <Trigger Property="IsSelected" Value="True">
                                                                         <Setter TargetName="Root" Property="Background" Value="{DynamicResource AccentSoftBrush}" />
@@ -816,17 +879,17 @@
                                                             <ColumnDefinition Width="Auto" />
                                                         </Grid.ColumnDefinitions>
                                                         
-                                                        <Border Width="32"
-                                                                Height="32"
-                                                                CornerRadius="10"
+                                                        <Border Width="30"
+                                                                Height="30"
+                                                                CornerRadius="9"
                                                                 Background="{DynamicResource GlassInnerBrush}"
-                                                                BorderBrush="{DynamicResource BorderBrushSoft}"
-                                                                BorderThickness="1"
+                                                                BorderBrush="Transparent"
+                                                                BorderThickness="0"
                                                                 HorizontalAlignment="Left">
                                                             <Grid>
                                                                 <Image Source="{Binding IconImage}"
-                                                                       Width="20"
-                                                                       Height="20"
+                                                                       Width="19"
+                                                                       Height="19"
                                                                        HorizontalAlignment="Center"
                                                                        VerticalAlignment="Center"
                                                                        Stretch="Uniform"
@@ -861,14 +924,17 @@
                                                                     Margin="0,0,6,0"
                                                                     Height="26"
                                                                     Padding="10,0"
-                                                                    FontSize="11.5"
-                                                                    Style="{StaticResource PrimaryButtonStyle}"
+                                                                    FontSize="11"
+                                                                    FontWeight="SemiBold"
+                                                                    Foreground="{DynamicResource AccentBrush}"
+                                                                    Style="{StaticResource GhostButtonStyle}"
                                                                     Command="{Binding DataContext.OpenItemCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                                     CommandParameter="{Binding}" />
                                                             <Button Content="移除"
                                                                     Height="26"
                                                                     Padding="10,0"
-                                                                    FontSize="11.5"
+                                                                    FontSize="11"
+                                                                    Foreground="{DynamicResource TextMutedBrush}"
                                                                     Style="{StaticResource GhostButtonStyle}"
                                                                     Command="{Binding DataContext.DeleteItemCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                                     CommandParameter="{Binding}" />
@@ -883,6 +949,180 @@
                         </Grid>
                     </Grid>
 
+                    <!-- Todo Archive Page -->
+                    <Grid Visibility="{Binding IsArchivePage, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <Grid Grid.Row="0" Margin="0,0,0,18">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock Text="待办历史"
+                                           Foreground="{DynamicResource TextMutedBrush}"
+                                           FontSize="12"
+                                           FontWeight="SemiBold" />
+                                <TextBlock Text="归档"
+                                           Margin="0,3,0,0"
+                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                           FontSize="26"
+                                           FontWeight="Bold" />
+                                <TextBlock Text="从桌面待办盒归档的已完成事项会保存在这里"
+                                           Margin="0,5,0,0"
+                                           Foreground="{DynamicResource TextMutedBrush}"
+                                           FontSize="12.5" />
+                            </StackPanel>
+                            <Border Grid.Column="1"
+                                    VerticalAlignment="Center"
+                                    Background="{DynamicResource AccentSoftBrush}"
+                                    CornerRadius="11"
+                                    Padding="13,7">
+                                <TextBlock Text="{Binding ArchivedTodos.Count, StringFormat={}{0} 项}"
+                                           Foreground="{DynamicResource AccentBrush}"
+                                           FontSize="12"
+                                           FontWeight="SemiBold" />
+                            </Border>
+                        </Grid>
+
+                        <Border Grid.Row="1"
+                                Background="{DynamicResource PanelBrush}"
+                                BorderBrush="{DynamicResource BorderBrushSoft}"
+                                BorderThickness="1"
+                                CornerRadius="16"
+                                Padding="14">
+                            <Grid>
+                                <StackPanel HorizontalAlignment="Center"
+                                            VerticalAlignment="Center"
+                                            Visibility="{Binding ArchivedTodos.Count, Converter={StaticResource ZeroToVisibilityConverter}}">
+                                    <Border Width="48"
+                                            Height="48"
+                                            Background="{DynamicResource AccentSoftBrush}"
+                                            CornerRadius="24">
+                                        <Grid>
+                                            <Path Data="M 14,17 L 34,17 M 17,17 L 18.5,34 L 29.5,34 L 31,17 M 20,13 L 28,13 L 30,17 L 18,17 Z"
+                                                  Stroke="{DynamicResource AccentBrush}"
+                                                  StrokeThickness="1.7"
+                                                  StrokeStartLineCap="Round"
+                                                  StrokeEndLineCap="Round"
+                                                  StrokeLineJoin="Round"
+                                                  Fill="Transparent"
+                                                  Stretch="None" />
+                                        </Grid>
+                                    </Border>
+                                    <TextBlock Text="还没有归档事项"
+                                               Margin="0,12,0,0"
+                                               HorizontalAlignment="Center"
+                                               Foreground="{DynamicResource TextPrimaryBrush}"
+                                               FontSize="14"
+                                               FontWeight="SemiBold" />
+                                    <TextBlock Text="在桌面待办盒中完成事项后，点击“归档”"
+                                               Margin="0,5,0,0"
+                                               Foreground="{DynamicResource TextMutedBrush}"
+                                               FontSize="12" />
+                                </StackPanel>
+
+                                <ListBox ItemsSource="{Binding ArchivedTodos}"
+                                         Background="Transparent"
+                                         BorderThickness="0"
+                                         ScrollViewer.CanContentScroll="True"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                         VirtualizingPanel.IsVirtualizing="True"
+                                         VirtualizingPanel.VirtualizationMode="Recycling">
+                                    <ListBox.ItemContainerStyle>
+                                        <Style TargetType="{x:Type ListBoxItem}">
+                                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                                            <Setter Property="Padding" Value="0" />
+                                            <Setter Property="Margin" Value="0,0,0,7" />
+                                            <Setter Property="Template">
+                                                <Setter.Value>
+                                                    <ControlTemplate TargetType="{x:Type ListBoxItem}">
+                                                        <Border x:Name="ArchiveRow"
+                                                                Background="{DynamicResource PanelAltBrush}"
+                                                                BorderBrush="{DynamicResource BorderBrushSoft}"
+                                                                BorderThickness="1"
+                                                                CornerRadius="11"
+                                                                Padding="12,10">
+                                                            <ContentPresenter />
+                                                        </Border>
+                                                        <ControlTemplate.Triggers>
+                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                <Setter TargetName="ArchiveRow" Property="Background" Value="{DynamicResource HoverBrush}" />
+                                                            </Trigger>
+                                                        </ControlTemplate.Triggers>
+                                                    </ControlTemplate>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </Style>
+                                    </ListBox.ItemContainerStyle>
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="34" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <Border Width="28"
+                                                        Height="28"
+                                                        Background="{DynamicResource PositiveSoftBrush}"
+                                                        CornerRadius="14"
+                                                        VerticalAlignment="Center">
+                                                    <Path Data="M 7,14 L 11.5,18 L 21,9"
+                                                          Stroke="{DynamicResource PositiveBrush}"
+                                                          StrokeThickness="2"
+                                                          StrokeStartLineCap="Round"
+                                                          StrokeEndLineCap="Round"
+                                                          Stretch="None" />
+                                                </Border>
+                                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding Title}"
+                                                               Foreground="{DynamicResource TextPrimaryBrush}"
+                                                               FontSize="13"
+                                                               FontWeight="SemiBold"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                    <StackPanel Margin="0,3,0,0" Orientation="Horizontal">
+                                                        <TextBlock Text="{Binding BoxName}"
+                                                                   Foreground="{DynamicResource AccentBrush}"
+                                                                   FontSize="10.5"
+                                                                   FontWeight="SemiBold" />
+                                                        <TextBlock Text="  ·  "
+                                                                   Foreground="{DynamicResource TextMutedBrush}"
+                                                                   FontSize="10.5" />
+                                                        <TextBlock Text="{Binding ArchivedTimeLabel}"
+                                                                   Foreground="{DynamicResource TextMutedBrush}"
+                                                                   FontSize="10.5" />
+                                                    </StackPanel>
+                                                </StackPanel>
+                                                <Button Grid.Column="2"
+                                                        Content="恢复"
+                                                        Command="{Binding DataContext.RestoreArchivedTodoCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}"
+                                                        Style="{StaticResource GhostButtonStyle}"
+                                                        Foreground="{DynamicResource AccentBrush}"
+                                                        Margin="8,0,2,0"
+                                                        Padding="10,4" />
+                                                <Button Grid.Column="3"
+                                                        Content="删除"
+                                                        Command="{Binding DataContext.DeleteArchivedTodoCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}"
+                                                        Style="{StaticResource GhostButtonStyle}"
+                                                        Foreground="{DynamicResource TextMutedBrush}"
+                                                        Padding="10,4" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Grid>
+                        </Border>
+                    </Grid>
+
                     <!-- Settings Page -->
                     <Grid Visibility="{Binding IsSettingsPage, Converter={StaticResource BooleanToVisibilityConverter}}">
                         <Grid.RowDefinitions>
@@ -890,33 +1130,30 @@
                             <RowDefinition Height="*" />
                         </Grid.RowDefinitions>
 
-                        <StackPanel Grid.Row="0" Margin="0,0,0,24">
+                        <StackPanel Grid.Row="0" Margin="0,0,0,10">
                             <TextBlock Text="Settings"
                                        Foreground="{DynamicResource TextMutedBrush}"
-                                       FontSize="13"
+                                       FontSize="12"
                                        FontWeight="Bold"
                                        />
                             <TextBlock Text="系统设置"
-                                       Margin="0,4,0,0"
+                                       Margin="0,2,0,0"
                                        Foreground="{DynamicResource TextPrimaryBrush}"
-                                       FontSize="28"
+                                       FontSize="26"
                                        FontWeight="Bold" />
                         </StackPanel>
 
-                        <ScrollViewer Grid.Row="1"
-                                      Width="536"
-                                      HorizontalAlignment="Left"
-                                      VerticalScrollBarVisibility="Auto"
-                                      HorizontalScrollBarVisibility="Disabled"
-                                      CanContentScroll="False">
-                            <StackPanel Width="520" Margin="0,0,0,8">
+                            <StackPanel Grid.Row="1"
+                                        Margin="0"
+                                        HorizontalAlignment="Stretch"
+                                        VerticalAlignment="Top">
                                 <!-- Theme Settings Card -->
                                 <Border Background="{DynamicResource PanelBrush}"
                                     BorderBrush="{DynamicResource BorderBrushSoft}"
                                     BorderThickness="1"
-                                    CornerRadius="18"
-                                    Padding="18"
-                                    Margin="0,0,0,16">
+                                    CornerRadius="14"
+                                    Padding="12"
+                                    Margin="0,0,0,8">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -935,8 +1172,8 @@
                                     <UniformGrid Grid.Column="1" Columns="3" VerticalAlignment="Center">
                                         <UniformGrid.Resources>
                                             <Style x:Key="ThemeChoiceButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource {x:Type Button}}">
-                                                <Setter Property="Height" Value="32" />
-                                                <Setter Property="Padding" Value="12,2" />
+                                                <Setter Property="Height" Value="30" />
+                                                <Setter Property="Padding" Value="10,2" />
                                                 <Setter Property="FontWeight" Value="Medium" />
                                                 <Setter Property="Template">
                                                     <Setter.Value>
@@ -945,7 +1182,7 @@
                                                                     Background="{TemplateBinding Background}"
                                                                     BorderBrush="{TemplateBinding BorderBrush}"
                                                                     BorderThickness="{TemplateBinding BorderThickness}"
-                                                                    CornerRadius="10"
+                                                                    CornerRadius="9"
                                                                     Padding="{TemplateBinding Padding}"
                                                                     RenderTransformOrigin="0.5,0.5">
                                                                 <Border.RenderTransform>
@@ -1032,11 +1269,11 @@
                                         <Button Content="清透雅致"
                                                 Command="{Binding ApplyMoeThemeCommand}"
                                                 Style="{StaticResource MoeThemeChoiceButtonStyle}"
-                                                Margin="0,0,8,0" />
+                                                Margin="0,0,6,0" />
                                         <Button Content="暗黑曜石"
                                                 Command="{Binding ApplyGlassThemeCommand}"
                                                 Style="{StaticResource GlassThemeChoiceButtonStyle}"
-                                                Margin="0,0,8,0" />
+                                                Margin="0,0,6,0" />
                                         <Button Content="全透水晶"
                                                 Command="{Binding ApplyCrystalThemeCommand}"
                                                 Style="{StaticResource CrystalThemeChoiceButtonStyle}" />
@@ -1048,9 +1285,9 @@
                                 <Border Background="{DynamicResource PanelBrush}"
                                     BorderBrush="{DynamicResource BorderBrushSoft}"
                                     BorderThickness="1"
-                                    CornerRadius="18"
-                                    Padding="18"
-                                    Margin="0,0,0,16">
+                                    CornerRadius="14"
+                                    Padding="12"
+                                    Margin="0,0,0,8">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -1070,13 +1307,13 @@
                                             Background="{DynamicResource AccentSoftBrush}" 
                                             BorderBrush="{DynamicResource BorderBrushSoft}" 
                                             BorderThickness="1" 
-                                            CornerRadius="10" 
-                                            Padding="14,6" 
+                                            CornerRadius="9"
+                                            Padding="10,4"
                                             VerticalAlignment="Center">
                                         <TextBlock Text="Ctrl + Alt + W" 
                                                    Foreground="{DynamicResource AccentBrush}" 
                                                    FontWeight="Bold" 
-                                                   FontSize="13" />
+                                                   FontSize="12" />
                                     </Border>
                                 </Grid>
                                 </Border>
@@ -1085,9 +1322,9 @@
                             <Border Background="{DynamicResource PanelBrush}"
                                     BorderBrush="{DynamicResource BorderBrushSoft}"
                                     BorderThickness="1"
-                                    CornerRadius="18"
-                                    Padding="18"
-                                    Margin="0,0,0,16">
+                                    CornerRadius="14"
+                                    Padding="12"
+                                    Margin="0,0,0,8">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -1112,8 +1349,8 @@
                                             Content="检查更新"
                                             Command="{Binding CheckForUpdateCommand}"
                                             Style="{StaticResource PrimaryButtonStyle}"
-                                            Height="32"
-                                            Padding="14,0"
+                                            Height="30"
+                                            Padding="12,0"
                                             VerticalAlignment="Center" />
                                 </Grid>
                             </Border>
@@ -1122,9 +1359,9 @@
                                 <Border Background="{DynamicResource PanelBrush}"
                                     BorderBrush="{DynamicResource BorderBrushSoft}"
                                     BorderThickness="1"
-                                    CornerRadius="18"
-                                    Padding="18"
-                                    Margin="0,0,0,16">
+                                    CornerRadius="14"
+                                    Padding="12"
+                                    Margin="0,0,0,8">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -1143,9 +1380,9 @@
                                     <Button Grid.Column="1"
                                             Command="{Binding ToggleLaunchOnStartupCommand}"
                                             VerticalAlignment="Center"
-                                            Height="32"
-                                            MinWidth="56"
-                                            Padding="14,0">
+                                            Height="30"
+                                            MinWidth="52"
+                                            Padding="12,0">
                                         <Button.Style>
                                             <Style TargetType="{x:Type Button}" BasedOn="{StaticResource {x:Type Button}}">
                                                 <Setter Property="Content" Value="已关闭" />
@@ -1157,7 +1394,7 @@
                                                                     Background="{DynamicResource PanelAltBrush}"
                                                                     BorderBrush="{DynamicResource BorderBrushSoft}"
                                                                     BorderThickness="1"
-                                                                    CornerRadius="10"
+                                                                    CornerRadius="9"
                                                                     Padding="{TemplateBinding Padding}">
                                                                 <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                                                             </Border>
@@ -1180,7 +1417,7 @@
                                                                             Background="{DynamicResource AccentBrush}"
                                                                             BorderBrush="{DynamicResource AccentBrush}"
                                                                             BorderThickness="1"
-                                                                            CornerRadius="10"
+                                                                            CornerRadius="9"
                                                                             Padding="{TemplateBinding Padding}">
                                                                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                                                                     </Border>
@@ -1204,23 +1441,22 @@
                                 <Border Background="{DynamicResource PanelBrush}"
                                     BorderBrush="{DynamicResource BorderBrushSoft}"
                                     BorderThickness="1"
-                                    CornerRadius="18"
-                                    Padding="18">
+                                    CornerRadius="14"
+                                    Padding="12">
                                 <StackPanel>
                                     <TextBlock Text="桌面微件特性"
                                                FontWeight="Bold"
                                                FontSize="14"
                                                Foreground="{DynamicResource TextPrimaryBrush}" />
                                     <TextBlock Text="WitchDrawer 桌面收纳栏专为极简桌面开发。仅呈现智能分类图标与轻量投放区，所有多余的标题栏、管理和刷新功能已统一收归本控制台进行操作，以保持您桌面清爽洁净。"
-                                               Margin="0,6,0,0"
+                                               Margin="0,4,0,0"
                                                FontSize="12"
-                                               LineHeight="18"
+                                               LineHeight="16"
                                                TextWrapping="Wrap"
                                                Foreground="{DynamicResource TextMutedBrush}" />
                                 </StackPanel>
                                 </Border>
                             </StackPanel>
-                        </ScrollViewer>
                     </Grid>
 
                     <!-- About Page -->
@@ -1230,31 +1466,28 @@
                             <RowDefinition Height="*" />
                         </Grid.RowDefinitions>
 
-                        <StackPanel Grid.Row="0" Margin="0,0,0,24">
+                        <StackPanel Grid.Row="0" Margin="0,0,0,10">
                             <TextBlock Text="About"
                                        Foreground="{DynamicResource TextMutedBrush}"
-                                       FontSize="13"
+                                       FontSize="12"
                                        FontWeight="Bold" />
                             <TextBlock Text="关于"
-                                       Margin="0,4,0,0"
+                                       Margin="0,2,0,0"
                                        Foreground="{DynamicResource TextPrimaryBrush}"
-                                       FontSize="28"
+                                       FontSize="26"
                                        FontWeight="Bold" />
                         </StackPanel>
 
-                        <ScrollViewer Grid.Row="1"
-                                      Width="536"
-                                      HorizontalAlignment="Left"
-                                      VerticalScrollBarVisibility="Auto"
-                                      HorizontalScrollBarVisibility="Disabled"
-                                      CanContentScroll="False">
-                            <StackPanel Width="520" Margin="0,0,0,8">
+                            <StackPanel Grid.Row="1"
+                                        Margin="0"
+                                        HorizontalAlignment="Stretch"
+                                        VerticalAlignment="Top">
                                 <!-- App Info Card -->
                                 <Border Background="{DynamicResource AccentBrush}"
-                                    CornerRadius="20"
-                                    Margin="0,0,0,16">
+                                    CornerRadius="16"
+                                    Margin="0,0,0,8">
                                 <Grid>
-                                    <Border CornerRadius="20" IsHitTestVisible="False">
+                                    <Border CornerRadius="16" IsHitTestVisible="False">
                                         <Border.Background>
                                             <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
                                                 <GradientStop Color="#33FFFFFF" Offset="0" />
@@ -1263,14 +1496,14 @@
                                             </LinearGradientBrush>
                                         </Border.Background>
                                     </Border>
-                                    <StackPanel Margin="18" Orientation="Horizontal">
-                                        <Border Width="52" Height="52" CornerRadius="14" ClipToBounds="True" Background="Transparent">
-                                            <Image Source="/Assets/app.png" RenderOptions.BitmapScalingMode="HighQuality" Width="52" Height="52" />
+                                    <StackPanel Margin="12" Orientation="Horizontal">
+                                        <Border Width="44" Height="44" CornerRadius="12" ClipToBounds="True" Background="Transparent">
+                                            <Image Source="/Assets/app.png" RenderOptions.BitmapScalingMode="HighQuality" Width="44" Height="44" />
                                         </Border>
-                                        <StackPanel VerticalAlignment="Center" Margin="14,0,0,0">
+                                        <StackPanel VerticalAlignment="Center" Margin="12,0,0,0">
                                             <TextBlock Text="WitchDrawer"
                                                        Foreground="White"
-                                                       FontSize="22"
+                                                       FontSize="20"
                                                        FontWeight="Bold" />
                                             <TextBlock Text="轻量级 Windows 桌面文件收纳工具"
                                                        Foreground="White"
@@ -1286,17 +1519,17 @@
                                 <Border Background="{DynamicResource PanelBrush}"
                                     BorderBrush="{DynamicResource BorderBrushSoft}"
                                     BorderThickness="1"
-                                    CornerRadius="18"
-                                    Padding="18"
-                                    Margin="0,0,0,16">
+                                    CornerRadius="14"
+                                    Padding="12"
+                                    Margin="0,0,0,8">
                                 <StackPanel>
                                     <TextBlock Text="开发者"
                                                FontWeight="Bold"
                                                FontSize="14"
                                                Foreground="{DynamicResource TextPrimaryBrush}"
-                                               Margin="0,0,0,12" />
+                                               Margin="0,0,0,6" />
 
-                                    <Grid Margin="0,0,0,8">
+                                    <Grid Margin="0,0,0,4">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="80" />
                                             <ColumnDefinition Width="*" />
@@ -1313,7 +1546,7 @@
                                                    VerticalAlignment="Center" />
                                     </Grid>
 
-                                    <Grid Margin="0,0,0,8">
+                                    <Grid Margin="0,0,0,4">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="80" />
                                             <ColumnDefinition Width="*" />
@@ -1332,7 +1565,7 @@
                                                    MouseLeftButtonUp="OnOpenEmailClicked" />
                                     </Grid>
 
-                                    <Grid Margin="0,0,0,8">
+                                    <Grid Margin="0,0,0,4">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="80" />
                                             <ColumnDefinition Width="*" />
@@ -1363,7 +1596,7 @@
                                         <Border Grid.Column="1"
                                                 Background="{DynamicResource AccentSoftBrush}"
                                                 CornerRadius="6"
-                                                Padding="10,3"
+                                                Padding="8,2"
                                                 HorizontalAlignment="Left">
                                             <TextBlock Text="CC BY-NC-SA 4.0"
                                                        Foreground="{DynamicResource AccentBrush}"
@@ -1378,8 +1611,8 @@
                                 <Border Background="{DynamicResource PanelBrush}"
                                     BorderBrush="{DynamicResource BorderBrushSoft}"
                                     BorderThickness="1"
-                                    CornerRadius="18"
-                                    Padding="18">
+                                    CornerRadius="14"
+                                    Padding="12">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -1399,12 +1632,11 @@
                                             Content="在浏览器中打开"
                                             Style="{StaticResource PrimaryButtonStyle}"
                                             Click="OnOpenProjectLinkClicked"
-                                            Height="32"
-                                            Padding="14,0" />
+                                            Height="30"
+                                            Padding="12,0" />
                                 </Grid>
                                 </Border>
                             </StackPanel>
-                        </ScrollViewer>
                     </Grid>
                 </Grid>
             </Grid>

@@ -17,6 +17,7 @@ public sealed class MainViewModel : ObservableObject
     private const string StartupRegistryKeyName = "WitchDrawer";
 
     private readonly DrawerService _drawerService;
+    private readonly TodoService _todoService;
     private readonly IFileLauncher _launcher;
     private readonly IAppLogger _logger;
     private readonly QuickPanelViewModel _quickPanelViewModel;
@@ -27,6 +28,7 @@ public sealed class MainViewModel : ObservableObject
     private bool _isBusy;
     private bool _isSettingsPage;
     private bool _isAboutPage;
+    private bool _isArchivePage;
     private string _statusText = "准备就绪";
     private string _themeLabel = "清透雅致";
     private AppTheme _currentTheme;
@@ -37,6 +39,7 @@ public sealed class MainViewModel : ObservableObject
 
     public MainViewModel(
         DrawerService drawerService,
+        TodoService todoService,
         IFileLauncher launcher,
         IAppLogger logger,
         QuickPanelViewModel quickPanelViewModel,
@@ -44,6 +47,7 @@ public sealed class MainViewModel : ObservableObject
         UpdateService updateService)
     {
         _drawerService = drawerService;
+        _todoService = todoService;
         _launcher = launcher;
         _logger = logger;
         _quickPanelViewModel = quickPanelViewModel;
@@ -59,6 +63,8 @@ public sealed class MainViewModel : ObservableObject
         RenameSelectedBoxCommand = new AsyncRelayCommand<string?>(RenameSelectedBoxAsync, _ => SelectedBox is not null);
         OpenItemCommand = new AsyncRelayCommand<DrawerItemViewModel?>(OpenItemAsync);
         DeleteItemCommand = new AsyncRelayCommand<DrawerItemViewModel?>(DeleteItemAsync);
+        RestoreArchivedTodoCommand = new AsyncRelayCommand<ArchivedTodoItemViewModel?>(RestoreArchivedTodoAsync);
+        DeleteArchivedTodoCommand = new AsyncRelayCommand<ArchivedTodoItemViewModel?>(DeleteArchivedTodoAsync);
         SetCurrentTheme(AppThemeManager.CurrentTheme);
 
         ApplyMoeThemeCommand = new AsyncRelayCommand(() => ApplyThemeAsync(AppTheme.Moe));
@@ -66,9 +72,25 @@ public sealed class MainViewModel : ObservableObject
         ApplyCrystalThemeCommand = new AsyncRelayCommand(() => ApplyThemeAsync(AppTheme.Crystal));
         ToggleLaunchOnStartupCommand = new AsyncRelayCommand(ToggleLaunchOnStartupAsync);
         CheckForUpdateCommand = new AsyncRelayCommand(CheckForUpdateAsync);
-        ShowDashboardCommand = new RelayCommand(() => { IsSettingsPage = false; IsAboutPage = false; });
-        ShowSettingsCommand = new RelayCommand(() => { IsSettingsPage = true; IsAboutPage = false; });
-        ShowAboutCommand = new RelayCommand(() => { IsSettingsPage = false; IsAboutPage = true; });
+        ShowDashboardCommand = new RelayCommand(() =>
+        {
+            IsArchivePage = false;
+            IsSettingsPage = false;
+            IsAboutPage = false;
+        });
+        ShowArchiveCommand = new AsyncRelayCommand(ShowArchiveAsync);
+        ShowSettingsCommand = new RelayCommand(() =>
+        {
+            IsArchivePage = false;
+            IsSettingsPage = true;
+            IsAboutPage = false;
+        });
+        ShowAboutCommand = new RelayCommand(() =>
+        {
+            IsArchivePage = false;
+            IsSettingsPage = false;
+            IsAboutPage = true;
+        });
     }
 
     public event EventHandler? BoxesChanged;
@@ -78,6 +100,8 @@ public sealed class MainViewModel : ObservableObject
     public ObservableCollection<BoxViewModel> Boxes { get; } = [];
 
     public ObservableCollection<DrawerItemViewModel> Items { get; } = [];
+
+    public ObservableCollection<ArchivedTodoItemViewModel> ArchivedTodos { get; } = [];
 
     public DesktopBoxLayoutSettings DesktopBoxLayout { get; }
 
@@ -99,6 +123,10 @@ public sealed class MainViewModel : ObservableObject
 
     public IAsyncRelayCommand<DrawerItemViewModel?> DeleteItemCommand { get; }
 
+    public IAsyncRelayCommand<ArchivedTodoItemViewModel?> RestoreArchivedTodoCommand { get; }
+
+    public IAsyncRelayCommand<ArchivedTodoItemViewModel?> DeleteArchivedTodoCommand { get; }
+
     public IAsyncRelayCommand ApplyMoeThemeCommand { get; }
 
     public IAsyncRelayCommand ApplyGlassThemeCommand { get; }
@@ -110,6 +138,8 @@ public sealed class MainViewModel : ObservableObject
     public IAsyncRelayCommand CheckForUpdateCommand { get; }
 
     public IRelayCommand ShowDashboardCommand { get; }
+
+    public IAsyncRelayCommand ShowArchiveCommand { get; }
 
     public IRelayCommand ShowSettingsCommand { get; }
 
@@ -143,6 +173,12 @@ public sealed class MainViewModel : ObservableObject
     {
         get => _isAboutPage;
         set => SetProperty(ref _isAboutPage, value);
+    }
+
+    public bool IsArchivePage
+    {
+        get => _isArchivePage;
+        set => SetProperty(ref _isArchivePage, value);
     }
 
     public string StatusText
@@ -241,6 +277,10 @@ public sealed class MainViewModel : ObservableObject
         {
             IsBusy = true;
             await LoadItemsForSelectedBoxAsync(SelectedBox);
+            if (IsArchivePage)
+            {
+                await LoadArchivedTodosAsync();
+            }
             await _quickPanelViewModel.LoadAsync();
         }
         catch (Exception exception)
@@ -489,6 +529,66 @@ public sealed class MainViewModel : ObservableObject
             StatusText = result.StatusMessage;
             ItemsChanged?.Invoke(this, EventArgs.Empty);
         });
+    }
+
+    private async Task ShowArchiveAsync()
+    {
+        IsArchivePage = true;
+        IsSettingsPage = false;
+        IsAboutPage = false;
+        await LoadArchivedTodosAsync();
+    }
+
+    private async Task RestoreArchivedTodoAsync(ArchivedTodoItemViewModel? todo)
+    {
+        if (todo is null)
+        {
+            return;
+        }
+
+        await RunBusyAsync(async () =>
+        {
+            await _todoService.RestoreArchivedAsync(todo.Id);
+            await LoadArchivedTodosAsync();
+            StatusText = $"已将“{todo.Title}”恢复到 {todo.BoxName}";
+            ItemsChanged?.Invoke(this, EventArgs.Empty);
+        });
+    }
+
+    private async Task DeleteArchivedTodoAsync(ArchivedTodoItemViewModel? todo)
+    {
+        if (todo is null)
+        {
+            return;
+        }
+
+        await RunBusyAsync(async () =>
+        {
+            await _todoService.DeleteTodoAsync(todo.Id);
+            await LoadArchivedTodosAsync();
+            StatusText = $"已删除归档事项“{todo.Title}”";
+        });
+    }
+
+    private async Task LoadArchivedTodosAsync()
+    {
+        try
+        {
+            var archivedTodos = await _todoService.GetArchivedTodosAsync();
+            var boxNames = Boxes.ToDictionary(box => box.Id, box => box.Name);
+
+            ArchivedTodos.Clear();
+            foreach (var todo in archivedTodos)
+            {
+                var boxName = boxNames.GetValueOrDefault(todo.BoxId, "待办收纳盒");
+                ArchivedTodos.Add(new ArchivedTodoItemViewModel(todo, boxName));
+            }
+        }
+        catch (Exception exception)
+        {
+            _logger.Error(exception, "Failed to load archived todos.");
+            StatusText = exception.Message;
+        }
     }
 
     private async Task ApplyThemeAsync(AppTheme theme)

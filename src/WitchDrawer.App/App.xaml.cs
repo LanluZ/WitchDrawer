@@ -65,6 +65,7 @@ public partial class App : Application
             var quickPanel = new QuickPanelWindow(quickPanelViewModel);
             var mainViewModel = new MainViewModel(
                 drawerService,
+                todoService,
                 launcher,
                 logger,
                 quickPanelViewModel,

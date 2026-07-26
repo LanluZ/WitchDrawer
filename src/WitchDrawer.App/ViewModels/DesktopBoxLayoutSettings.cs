@@ -102,32 +102,78 @@ public sealed partial class DesktopBoxLayoutSettings : ObservableObject
 
     public Thickness ItemMargin => new(ItemSpacing);
 
-    // Mapping list mode follows the same density preset as grid mode. The formulas
-    // keep 5x5 at the original 310px / 32px baseline while allowing the other
-    // presets to grow or shrink the whole desktop widget consistently.
-    public double MappingListWidth => Math.Round(232 + (IconSize * 3), 1);
+    public bool IsCompactPreset => _currentPreset == "6x6";
 
-    public double MappingListRowHeight => Math.Round(12 + (IconSize * 0.78), 1);
+    // List mode deliberately uses a stronger size step for the smallest preset.
+    // Merely scaling the icon left a large shell around 6x6 items, especially on
+    // 150% DPI screens. Medium/large presets retain their original proportions.
+    public double MappingListWidth => _currentPreset switch
+    {
+        "3x3" => 364,
+        "4x4" => 334,
+        "5x5" => 310,
+        _ => 220
+    };
 
-    public double MappingListMinHeight => Math.Round(54 + (MappingListRowHeight * 2), 1);
+    public double MappingListRowHeight => _currentPreset switch
+    {
+        "3x3" => 46.3,
+        "4x4" => 38.5,
+        "5x5" => 32.3,
+        _ => 24
+    };
 
-    public double MappingListMaxHeight => Math.Round(200 + (MappingListRowHeight * 10), 1);
+    public double MappingListMinHeight => IsCompactPreset
+        ? 58
+        : Math.Round(54 + (MappingListRowHeight * 2), 1);
 
-    public double MappingListIconSize => Math.Round(IconSize * 0.75, 1);
+    public double MappingListMaxHeight => IsCompactPreset
+        ? 294
+        : Math.Round(200 + (MappingListRowHeight * 10), 1);
+
+    public double MappingListIconSize => IsCompactPreset
+        ? 14
+        : Math.Round(IconSize * 0.75, 1);
 
     public double MappingListIconFrameSize => MappingListIconSize + 2;
 
     public double MappingListIconColumnWidth => MappingListIconFrameSize + 4;
 
-    public double MappingListFontSize => Math.Round(14 + (IconSize / 13), 1);
+    public double MappingListFontSize => _currentPreset switch
+    {
+        "3x3" => 17.4,
+        "4x4" => 16.6,
+        "5x5" => 16,
+        _ => 12.5
+    };
+
+    public double MappingListTitleFontSize => IsCompactPreset ? 13 : 15;
 
     public double MappingListFallbackFontSize => Math.Max(7, Math.Round(MappingListIconSize * 0.38, 1));
 
-    public Thickness MappingListItemPadding => new(
-        Math.Max(2, Math.Round(ItemSpacing + 1, 1)),
-        Math.Max(2, Math.Round(ItemSpacing + 2, 1)),
-        Math.Max(2, Math.Round(ItemSpacing + 1, 1)),
-        Math.Max(2, Math.Round(ItemSpacing + 2, 1)));
+    public Thickness MappingListItemPadding => IsCompactPreset
+        ? new Thickness(1, 0.5, 2, 0.5)
+        : new Thickness(
+            Math.Max(2, Math.Round(ItemSpacing + 1, 1)),
+            Math.Max(2, Math.Round(ItemSpacing + 2, 1)),
+            Math.Max(2, Math.Round(ItemSpacing + 1, 1)),
+            Math.Max(2, Math.Round(ItemSpacing + 2, 1)));
+
+    public Thickness MappingListPadding => IsCompactPreset
+        ? new Thickness(4, 2, 4, 2)
+        : new Thickness(7, 4, 7, 4);
+
+    public Thickness MappingListMargin => IsCompactPreset
+        ? new Thickness(0, 0, 0, 4)
+        : new Thickness(0, 2, 0, 8);
+
+    public Thickness MappingListItemMargin => IsCompactPreset
+        ? new Thickness(0, 0.5, 0, 0.5)
+        : new Thickness(0, 1, 0, 1);
+
+    public Thickness MappingListWindowMargin => IsCompactPreset
+        ? new Thickness(4)
+        : new Thickness(6);
 
     public DesktopBoxLayoutSettings()
     {
@@ -215,6 +261,7 @@ public sealed partial class DesktopBoxLayoutSettings : ObservableObject
         OnPropertyChanged(nameof(FallbackIconFontSize));
         OnPropertyChanged(nameof(IconFrameSize));
         OnPropertyChanged(nameof(ItemMargin));
+        OnPropertyChanged(nameof(IsCompactPreset));
         OnPropertyChanged(nameof(MappingListWidth));
         OnPropertyChanged(nameof(MappingListRowHeight));
         OnPropertyChanged(nameof(MappingListMinHeight));
@@ -223,7 +270,12 @@ public sealed partial class DesktopBoxLayoutSettings : ObservableObject
         OnPropertyChanged(nameof(MappingListIconFrameSize));
         OnPropertyChanged(nameof(MappingListIconColumnWidth));
         OnPropertyChanged(nameof(MappingListFontSize));
+        OnPropertyChanged(nameof(MappingListTitleFontSize));
         OnPropertyChanged(nameof(MappingListFallbackFontSize));
         OnPropertyChanged(nameof(MappingListItemPadding));
+        OnPropertyChanged(nameof(MappingListPadding));
+        OnPropertyChanged(nameof(MappingListMargin));
+        OnPropertyChanged(nameof(MappingListItemMargin));
+        OnPropertyChanged(nameof(MappingListWindowMargin));
     }
 }
