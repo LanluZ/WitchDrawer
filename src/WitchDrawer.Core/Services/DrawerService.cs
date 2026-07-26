@@ -27,6 +27,30 @@ public sealed class DrawerService
         return _repository.GetBoxesAsync(cancellationToken);
     }
 
+    public async Task ReorderBoxesAsync(
+        IReadOnlyList<Guid> orderedBoxIds,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(orderedBoxIds);
+
+        var requestedIds = orderedBoxIds.ToArray();
+        if (requestedIds.Distinct().Count() != requestedIds.Length)
+        {
+            throw new ArgumentException("Box order cannot contain duplicate ids.", nameof(orderedBoxIds));
+        }
+
+        var existingBoxes = await _repository.GetBoxesAsync(cancellationToken);
+        var existingIds = existingBoxes.Select(box => box.Id).ToHashSet();
+        if (requestedIds.Length != existingIds.Count || requestedIds.Any(id => !existingIds.Contains(id)))
+        {
+            throw new ArgumentException(
+                "Box order must contain every existing box exactly once.",
+                nameof(orderedBoxIds));
+        }
+
+        await _repository.UpdateBoxSortOrdersAsync(requestedIds, cancellationToken);
+    }
+
     public async Task<IReadOnlyList<DrawerItem>> GetItemsAsync(Guid boxId, CancellationToken cancellationToken = default)
     {
         await PruneMissingStoredItemsAsync(boxId, cancellationToken);

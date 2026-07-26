@@ -13,7 +13,7 @@ namespace WitchDrawer.App.ViewModels;
 public sealed class MainViewModel : ObservableObject
 {
     private const string ThemeSettingKey = "Theme";
-    private const string LayoutPresetSettingKey = "LayoutPreset";
+    private const string CrystalBoxTransparencySettingKey = "CrystalBoxTransparency";
     private const string StartupRegistryKeyName = "WitchDrawer";
 
     private readonly DrawerService _drawerService;
@@ -32,6 +32,7 @@ public sealed class MainViewModel : ObservableObject
     private string _statusText = "准备就绪";
     private string _themeLabel = "清透雅致";
     private AppTheme _currentTheme;
+    private bool _isTransparentCrystalBoxes;
     private bool _launchOnStartup;
     private string _updateStatusText = string.Empty;
     private bool _isCheckingUpdate;
@@ -43,7 +44,6 @@ public sealed class MainViewModel : ObservableObject
         IFileLauncher launcher,
         IAppLogger logger,
         QuickPanelViewModel quickPanelViewModel,
-        DesktopBoxLayoutSettings desktopBoxLayoutSettings,
         UpdateService updateService)
     {
         _drawerService = drawerService;
@@ -51,7 +51,6 @@ public sealed class MainViewModel : ObservableObject
         _launcher = launcher;
         _logger = logger;
         _quickPanelViewModel = quickPanelViewModel;
-        DesktopBoxLayout = desktopBoxLayoutSettings;
         _updateService = updateService;
 
         LoadCommand = new AsyncRelayCommand(LoadAsync);
@@ -69,7 +68,7 @@ public sealed class MainViewModel : ObservableObject
 
         ApplyMoeThemeCommand = new AsyncRelayCommand(() => ApplyThemeAsync(AppTheme.Moe));
         ApplyGlassThemeCommand = new AsyncRelayCommand(() => ApplyThemeAsync(AppTheme.Glass));
-        ApplyCrystalThemeCommand = new AsyncRelayCommand(() => ApplyThemeAsync(AppTheme.Crystal));
+        ApplyCrystalThemeCommand = new AsyncRelayCommand(ApplyCrystalThemeAsync);
         ToggleLaunchOnStartupCommand = new AsyncRelayCommand(ToggleLaunchOnStartupAsync);
         CheckForUpdateCommand = new AsyncRelayCommand(CheckForUpdateAsync);
         ShowDashboardCommand = new RelayCommand(() =>
@@ -102,8 +101,6 @@ public sealed class MainViewModel : ObservableObject
     public ObservableCollection<DrawerItemViewModel> Items { get; } = [];
 
     public ObservableCollection<ArchivedTodoItemViewModel> ArchivedTodos { get; } = [];
-
-    public DesktopBoxLayoutSettings DesktopBoxLayout { get; }
 
     public IAsyncRelayCommand LoadCommand { get; }
 
@@ -213,6 +210,18 @@ public sealed class MainViewModel : ObservableObject
 
     public bool IsCrystalTheme => CurrentTheme == AppTheme.Crystal;
 
+    public bool IsTransparentCrystalBoxes
+    {
+        get => _isTransparentCrystalBoxes;
+        private set
+        {
+            if (SetProperty(ref _isTransparentCrystalBoxes, value))
+            {
+                UpdateThemeLabel();
+            }
+        }
+    }
+
     public bool LaunchOnStartup
     {
         get => _launchOnStartup;
@@ -256,7 +265,7 @@ public sealed class MainViewModel : ObservableObject
             await SelectBoxAsync(Boxes.FirstOrDefault(box => box.Id == existingSelection) ?? Boxes.FirstOrDefault());
 
             LaunchOnStartup = ReadStartupRegistry();
-            await RestoreLayoutPresetAsync();
+            await RestoreCrystalBoxTransparencyAsync();
 
             StatusText = $"{Boxes.Count} 个收纳盒已同步到桌面";
             BoxesChanged?.Invoke(this, EventArgs.Empty);
@@ -291,6 +300,48 @@ public sealed class MainViewModel : ObservableObject
         finally
         {
             IsBusy = false;
+        }
+    }
+
+    public async Task ReorderBoxAsync(Guid draggedBoxId, Guid targetBoxId, bool insertAfter)
+    {
+        var draggedBox = Boxes.FirstOrDefault(box => box.Id == draggedBoxId);
+        var targetBox = Boxes.FirstOrDefault(box => box.Id == targetBoxId);
+        if (draggedBox is null || targetBox is null || ReferenceEquals(draggedBox, targetBox))
+        {
+            return;
+        }
+
+        var originalIndex = Boxes.IndexOf(draggedBox);
+        var originalOrder = Boxes.Select(box => box.Id).ToArray();
+        Boxes.RemoveAt(originalIndex);
+
+        var targetIndex = Boxes.IndexOf(targetBox);
+        var insertionIndex = insertAfter ? targetIndex + 1 : targetIndex;
+        Boxes.Insert(insertionIndex, draggedBox);
+
+        var reorderedIds = Boxes.Select(box => box.Id).ToArray();
+        if (reorderedIds.SequenceEqual(originalOrder))
+        {
+            return;
+        }
+
+        try
+        {
+            await _drawerService.ReorderBoxesAsync(reorderedIds);
+            SelectedBox = draggedBox;
+            StatusText = $"已调整“{draggedBox.Name}”的排列位置";
+        }
+        catch (Exception exception)
+        {
+            var currentIndex = Boxes.IndexOf(draggedBox);
+            if (currentIndex >= 0 && currentIndex != originalIndex)
+            {
+                Boxes.Move(currentIndex, originalIndex);
+            }
+
+            _logger.Error(exception, "Failed to reorder boxes.");
+            StatusText = "收纳盒排序保存失败，已恢复原顺序";
         }
     }
 
@@ -595,6 +646,11 @@ public sealed class MainViewModel : ObservableObject
     {
         try
         {
+            if (theme != AppTheme.Crystal)
+            {
+                await SetCrystalBoxTransparencyAsync(false);
+            }
+
             AppThemeManager.Apply(theme);
             SetCurrentTheme(theme);
             await _drawerService.SetSettingAsync(ThemeSettingKey, theme.ToString());
@@ -607,12 +663,43 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
+    private async Task ApplyCrystalThemeAsync()
+    {
+        if (CurrentTheme == AppTheme.Crystal)
+        {
+            var useTransparentBoxes = !IsTransparentCrystalBoxes;
+            await SetCrystalBoxTransparencyAsync(useTransparentBoxes);
+            StatusText = useTransparentBoxes
+                ? "桌面收纳盒已切换为透明水晶"
+                : "桌面收纳盒已切换为清晰水晶";
+            return;
+        }
+
+        await SetCrystalBoxTransparencyAsync(false);
+        await ApplyThemeAsync(AppTheme.Crystal);
+    }
+
+    private async Task SetCrystalBoxTransparencyAsync(bool enabled)
+    {
+        IsTransparentCrystalBoxes = enabled;
+        AppThemeManager.SetCrystalBoxTransparency(enabled);
+        await _drawerService.SetSettingAsync(
+            CrystalBoxTransparencySettingKey,
+            enabled.ToString());
+    }
+
     private void SetCurrentTheme(AppTheme theme)
     {
         CurrentTheme = theme;
-        ThemeLabel = theme switch
+        UpdateThemeLabel();
+    }
+
+    private void UpdateThemeLabel()
+    {
+        ThemeLabel = CurrentTheme switch
         {
             AppTheme.Glass => "暗黑曜石",
+            AppTheme.Crystal when IsTransparentCrystalBoxes => "全透水晶 · 透明盒",
             AppTheme.Crystal => "全透水晶",
             _ => "清透雅致"
         };
@@ -696,18 +783,14 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
-    private async Task RestoreLayoutPresetAsync()
+    private async Task RestoreCrystalBoxTransparencyAsync()
     {
-        var savedPreset = await _drawerService.GetSettingAsync(LayoutPresetSettingKey);
-        if (!string.IsNullOrEmpty(savedPreset))
-        {
-            DesktopBoxLayout.ApplyPresetCommand.Execute(savedPreset);
-        }
-    }
-
-    public async Task SaveLayoutPresetAsync(string preset)
-    {
-        await _drawerService.SetSettingAsync(LayoutPresetSettingKey, preset);
+        var savedValue = await _drawerService.GetSettingAsync(CrystalBoxTransparencySettingKey);
+        var enabled = CurrentTheme == AppTheme.Crystal
+            && bool.TryParse(savedValue, out var savedEnabled)
+            && savedEnabled;
+        IsTransparentCrystalBoxes = enabled;
+        AppThemeManager.SetCrystalBoxTransparency(enabled);
     }
 
     private async Task CheckForUpdateAsync()

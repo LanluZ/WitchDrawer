@@ -19,6 +19,36 @@ public sealed class DrawerServiceTests
     }
 
     [Fact]
+    public async Task ReorderBoxesAsync_PersistsCompleteOrder()
+    {
+        using var workspace = await TestWorkspace.CreateAsync();
+        await workspace.Service.CreateBoxAsync("third", BoxType.Normal);
+        var original = await workspace.Service.GetBoxesAsync();
+        var expectedIds = original.Select(box => box.Id).Reverse().ToArray();
+
+        await workspace.Service.ReorderBoxesAsync(expectedIds);
+
+        var reordered = await workspace.Service.GetBoxesAsync();
+        Assert.Equal(expectedIds, reordered.Select(box => box.Id));
+        Assert.Equal(Enumerable.Range(0, expectedIds.Length), reordered.Select(box => box.SortOrder));
+    }
+
+    [Fact]
+    public async Task ReorderBoxesAsync_RejectsIncompleteOrDuplicateOrder()
+    {
+        using var workspace = await TestWorkspace.CreateAsync();
+        var boxes = await workspace.Service.GetBoxesAsync();
+        var originalIds = boxes.Select(box => box.Id).ToArray();
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => workspace.Service.ReorderBoxesAsync([originalIds[0], originalIds[0]]));
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => workspace.Service.ReorderBoxesAsync([originalIds[0]]));
+
+        Assert.Equal(originalIds, (await workspace.Service.GetBoxesAsync()).Select(box => box.Id));
+    }
+
+    [Fact]
     public void EnsureCreatedAndWritable_SucceedsOnWritableDirectory()
     {
         var root = Path.Combine(Path.GetTempPath(), "WitchDrawer.Tests", Guid.NewGuid().ToString("N"));

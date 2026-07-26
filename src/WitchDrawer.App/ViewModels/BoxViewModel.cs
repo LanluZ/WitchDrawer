@@ -17,7 +17,7 @@ public sealed class BoxViewModel
         LayoutSettings = new DesktopBoxLayoutSettings();
         LayoutSettings.SetPresetChangedCallback(async (preset) => 
         {
-            await _drawerService.SetSettingAsync($"BoxPreset_{Id}", preset);
+            await _drawerService.SetSettingAsync(GetLayoutPresetSettingKey(Id), preset);
             WeakReferenceMessenger.Default.Send(new BoxLayoutPresetChangedMessage(Id, preset));
         });
 
@@ -26,12 +26,11 @@ public sealed class BoxViewModel
 
     private async Task LoadPresetAsync()
     {
-        var preset = await _drawerService.GetSettingAsync($"BoxPreset_{Id}");
-        if (!string.IsNullOrEmpty(preset))
-        {
-            LayoutSettings.ApplyPresetCommand.Execute(preset);
-        }
+        var preset = await _drawerService.GetSettingAsync(GetLayoutPresetSettingKey(Id));
+        LayoutSettings.ApplyPresetWithoutCallback(preset);
     }
+
+    internal static string GetLayoutPresetSettingKey(Guid boxId) => $"BoxPreset_{boxId}";
 
     public DesktopBoxLayoutSettings LayoutSettings { get; }
     

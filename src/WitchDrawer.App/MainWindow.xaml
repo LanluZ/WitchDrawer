@@ -264,8 +264,13 @@
                                      Grid.Row="1"
                                      ItemsSource="{Binding Boxes}"
                                      SelectedItem="{Binding SelectedBox, Mode=TwoWay}"
+                                     AllowDrop="True"
                                      SelectionChanged="OnBoxesSelectionChanged"
                                      MouseDoubleClick="OnBoxesMouseDoubleClick"
+                                     PreviewMouseLeftButtonDown="OnBoxesPreviewMouseLeftButtonDown"
+                                     PreviewMouseMove="OnBoxesPreviewMouseMove"
+                                     DragOver="OnBoxesDragOver"
+                                     Drop="OnBoxesDrop"
                                      ScrollViewer.CanContentScroll="True"
                                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                      ScrollViewer.VerticalScrollBarVisibility="Auto"
@@ -303,6 +308,24 @@
                                                                     Visibility="Collapsed"
                                                                     Margin="-3,0,8,0" />
                                                             <ContentPresenter Grid.Column="1" />
+                                                            <Border x:Name="DropBefore"
+                                                                    Grid.ColumnSpan="2"
+                                                                    Height="2"
+                                                                    Margin="0,-7,0,0"
+                                                                    Background="{DynamicResource AccentBrush}"
+                                                                    CornerRadius="1"
+                                                                    VerticalAlignment="Top"
+                                                                    Panel.ZIndex="2"
+                                                                    Visibility="Collapsed" />
+                                                            <Border x:Name="DropAfter"
+                                                                    Grid.ColumnSpan="2"
+                                                                    Height="2"
+                                                                    Margin="0,0,0,-7"
+                                                                    Background="{DynamicResource AccentBrush}"
+                                                                    CornerRadius="1"
+                                                                    VerticalAlignment="Bottom"
+                                                                    Panel.ZIndex="2"
+                                                                    Visibility="Collapsed" />
                                                         </Grid>
                                                     </Border>
                                                     <ControlTemplate.Triggers>
@@ -313,6 +336,12 @@
                                                             <Setter TargetName="Root" Property="Background" Value="{DynamicResource AccentSoftBrush}" />
                                                             <Setter TargetName="Root" Property="BorderBrush" Value="Transparent" />
                                                             <Setter TargetName="Indicator" Property="Visibility" Value="Visible" />
+                                                        </Trigger>
+                                                        <Trigger Property="Tag" Value="DropBefore">
+                                                            <Setter TargetName="DropBefore" Property="Visibility" Value="Visible" />
+                                                        </Trigger>
+                                                        <Trigger Property="Tag" Value="DropAfter">
+                                                            <Setter TargetName="DropAfter" Property="Visibility" Value="Visible" />
                                                         </Trigger>
                                                     </ControlTemplate.Triggers>
                                                 </ControlTemplate>
@@ -691,19 +720,82 @@
                                                 <ColumnDefinition Width="*" />
                                             </Grid.ColumnDefinitions>
                                             
-                                            <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,0">
+                                            <StackPanel Grid.Column="0"
+                                                        Orientation="Horizontal"
+                                                        VerticalAlignment="Center"
+                                                        Margin="0,0,8,0">
                                                 <TextBlock Text="图标大小"
                                                            Foreground="{DynamicResource TextPrimaryBrush}"
                                                            FontSize="11.5"
-                                                           FontWeight="Bold" />
+                                                           FontWeight="Bold"
+                                                           VerticalAlignment="Center" />
+                                                <Border Background="{DynamicResource AccentSoftBrush}"
+                                                        CornerRadius="6"
+                                                        Margin="6,0,0,0"
+                                                        Padding="6,2">
+                                                    <TextBlock Text="{Binding SelectedBox.LayoutSettings.CurrentSizeLabel, TargetNullValue=小}"
+                                                               Foreground="{DynamicResource AccentBrush}"
+                                                               FontSize="10"
+                                                               FontWeight="SemiBold" />
+                                                </Border>
                                             </StackPanel>
 
                                             <!-- 胶囊样式小按钮组，提供流畅的桌面网格排列控制 -->
                                             <UniformGrid Grid.Column="1" Columns="4" Rows="1" VerticalAlignment="Center">
+                                                <UniformGrid.Resources>
+                                                    <Style x:Key="ExtraLargeIconSizeButtonStyle"
+                                                           TargetType="{x:Type Button}"
+                                                           BasedOn="{StaticResource GhostButtonStyle}">
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding SelectedBox.LayoutSettings.IsExtraLargePreset}" Value="True">
+                                                                <Setter Property="Background" Value="{DynamicResource AccentSoftBrush}" />
+                                                                <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                                                                <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+                                                                <Setter Property="FontWeight" Value="SemiBold" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                    <Style x:Key="LargeIconSizeButtonStyle"
+                                                           TargetType="{x:Type Button}"
+                                                           BasedOn="{StaticResource GhostButtonStyle}">
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding SelectedBox.LayoutSettings.IsLargePreset}" Value="True">
+                                                                <Setter Property="Background" Value="{DynamicResource AccentSoftBrush}" />
+                                                                <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                                                                <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+                                                                <Setter Property="FontWeight" Value="SemiBold" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                    <Style x:Key="MediumIconSizeButtonStyle"
+                                                           TargetType="{x:Type Button}"
+                                                           BasedOn="{StaticResource GhostButtonStyle}">
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding SelectedBox.LayoutSettings.IsMediumPreset}" Value="True">
+                                                                <Setter Property="Background" Value="{DynamicResource AccentSoftBrush}" />
+                                                                <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                                                                <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+                                                                <Setter Property="FontWeight" Value="SemiBold" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                    <Style x:Key="SmallIconSizeButtonStyle"
+                                                           TargetType="{x:Type Button}"
+                                                           BasedOn="{StaticResource GhostButtonStyle}">
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding SelectedBox.LayoutSettings.IsSmallPreset}" Value="True">
+                                                                <Setter Property="Background" Value="{DynamicResource AccentSoftBrush}" />
+                                                                <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                                                                <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+                                                                <Setter Property="FontWeight" Value="SemiBold" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </UniformGrid.Resources>
                                                 <Button Content="超大"
                                                         ToolTip="超大图标"
-                                                        Style="{StaticResource GhostButtonStyle}"
-                                                        Command="{Binding DesktopBoxLayout.ApplyPresetCommand}"
+                                                        Style="{StaticResource ExtraLargeIconSizeButtonStyle}"
+                                                        Command="{Binding SelectedBox.LayoutSettings.ApplyPresetCommand}"
                                                         CommandParameter="3x3"
                                                         Margin="0,0,2,0"
                                                         Padding="0,3.5"
@@ -711,8 +803,8 @@
                                                         FontSize="10.5" />
                                                 <Button Content="大"
                                                         ToolTip="大图标"
-                                                        Style="{StaticResource GhostButtonStyle}"
-                                                        Command="{Binding DesktopBoxLayout.ApplyPresetCommand}"
+                                                        Style="{StaticResource LargeIconSizeButtonStyle}"
+                                                        Command="{Binding SelectedBox.LayoutSettings.ApplyPresetCommand}"
                                                         CommandParameter="4x4"
                                                         Margin="0,0,2,0"
                                                         Padding="0,3.5"
@@ -720,8 +812,8 @@
                                                         FontSize="10.5" />
                                                 <Button Content="中"
                                                         ToolTip="中等图标"
-                                                        Style="{StaticResource GhostButtonStyle}"
-                                                        Command="{Binding DesktopBoxLayout.ApplyPresetCommand}"
+                                                        Style="{StaticResource MediumIconSizeButtonStyle}"
+                                                        Command="{Binding SelectedBox.LayoutSettings.ApplyPresetCommand}"
                                                         CommandParameter="5x5"
                                                         Margin="0,0,2,0"
                                                         Padding="0,3.5"
@@ -729,8 +821,8 @@
                                                         FontSize="10.5" />
                                                 <Button Content="小"
                                                         ToolTip="小图标"
-                                                        Style="{StaticResource GhostButtonStyle}"
-                                                        Command="{Binding DesktopBoxLayout.ApplyPresetCommand}"
+                                                        Style="{StaticResource SmallIconSizeButtonStyle}"
+                                                        Command="{Binding SelectedBox.LayoutSettings.ApplyPresetCommand}"
                                                         CommandParameter="6x6"
                                                         Padding="0,3.5"
                                                         MinHeight="22"
@@ -1260,6 +1352,21 @@
                                                     <DataTrigger Binding="{Binding IsCrystalTheme}" Value="True">
                                                         <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
                                                         <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                                                        <Setter Property="Foreground" Value="White" />
+                                                        <Setter Property="FontWeight" Value="SemiBold" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding IsTransparentCrystalBoxes}" Value="True">
+                                                        <Setter Property="Background">
+                                                            <Setter.Value>
+                                                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                                                    <GradientStop Color="#FF0EA5E9" Offset="0" />
+                                                                    <GradientStop Color="#FF0EA5E9" Offset="0.48" />
+                                                                    <GradientStop Color="#730EA5E9" Offset="0.52" />
+                                                                    <GradientStop Color="#260EA5E9" Offset="1" />
+                                                                </LinearGradientBrush>
+                                                            </Setter.Value>
+                                                        </Setter>
+                                                        <Setter Property="BorderBrush" Value="#990EA5E9" />
                                                         <Setter Property="Foreground" Value="White" />
                                                         <Setter Property="FontWeight" Value="SemiBold" />
                                                     </DataTrigger>

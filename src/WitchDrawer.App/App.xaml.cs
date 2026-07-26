@@ -51,7 +51,6 @@ public partial class App : Application
             var repository = new DrawerRepository(paths.DatabasePath);
             var drawerService = new DrawerService(paths, repository);
             var launcher = new ShellFileLauncher();
-            var desktopBoxLayoutSettings = new DesktopBoxLayoutSettings();
             var todoService = new TodoService(repository);
             var updateService = new UpdateService(logger);
 
@@ -69,15 +68,12 @@ public partial class App : Application
                 launcher,
                 logger,
                 quickPanelViewModel,
-                desktopBoxLayoutSettings,
                 updateService);
-            desktopBoxLayoutSettings.SetPresetChangedCallback(mainViewModel.SaveLayoutPresetAsync);
             _desktopBoxManager = new DesktopBoxManager(
                 drawerService,
                 todoService,
                 launcher,
-                logger,
-                desktopBoxLayoutSettings);
+                logger);
             _mainWindow = new MainWindow(mainViewModel, quickPanel, logger);
             StartSingleInstanceServer(logger);
 

@@ -14,6 +14,7 @@ namespace WitchDrawer.App;
 public partial class MainWindow : Window
 {
     private const string InternalDrawerItemDragFormat = "WitchDrawer.DesktopBoxItem";
+    private const string BoxListDragFormat = "WitchDrawer.BoxListOrder";
     private const int WmHotKey = 0x0312;
     private const int QuickPanelHotKeyId = 0x5744;
 
@@ -21,6 +22,9 @@ public partial class MainWindow : Window
     private readonly IAppLogger _logger;
     private NativeHotKey? _hotKey;
     private HwndSource? _source;
+    private Point? _boxDragStart;
+    private BoxViewModel? _boxDragSource;
+    private ListBoxItem? _boxDropTarget;
 
     public event EventHandler? WindowHidden;
     public event EventHandler? WindowClosing;
@@ -153,6 +157,13 @@ public partial class MainWindow : Window
 
     private void OnPreviewDragOver(object sender, DragEventArgs e)
     {
+        if (e.Data.GetDataPresent(BoxListDragFormat))
+        {
+            // Let the sidebar ListBox handle its own reorder drag event.
+            e.Handled = false;
+            return;
+        }
+
         if (e.Data.GetDataPresent(InternalDrawerItemDragFormat))
         {
             e.Effects = DragDropEffects.None;
@@ -206,6 +217,125 @@ public partial class MainWindow : Window
         if (sender is ListBox listBox && listBox.SelectedItem is not null)
         {
             listBox.ScrollIntoView(listBox.SelectedItem);
+        }
+    }
+
+    private void OnBoxesPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        _boxDragStart = e.GetPosition(BoxesList);
+        _boxDragSource = e.OriginalSource is DependencyObject source
+            ? (ItemsControl.ContainerFromElement(BoxesList, source) as ListBoxItem)?.DataContext as BoxViewModel
+            : null;
+    }
+
+    private void OnBoxesPreviewMouseMove(object sender, MouseEventArgs e)
+    {
+        if (e.LeftButton != MouseButtonState.Pressed
+            || _boxDragStart is null
+            || _boxDragSource is null)
+        {
+            return;
+        }
+
+        var current = e.GetPosition(BoxesList);
+        if (Math.Abs(current.X - _boxDragStart.Value.X) < SystemParameters.MinimumHorizontalDragDistance
+            && Math.Abs(current.Y - _boxDragStart.Value.Y) < SystemParameters.MinimumVerticalDragDistance)
+        {
+            return;
+        }
+
+        var data = new DataObject(BoxListDragFormat, _boxDragSource.Id.ToString("D"));
+        try
+        {
+            e.Handled = true;
+            DragDrop.DoDragDrop(BoxesList, data, DragDropEffects.Move);
+        }
+        finally
+        {
+            _boxDragStart = null;
+            _boxDragSource = null;
+            ClearBoxDropIndicator();
+        }
+    }
+
+    private void OnBoxesDragOver(object sender, DragEventArgs e)
+    {
+        if (!e.Data.GetDataPresent(BoxListDragFormat)
+            || !TryGetBoxDropTarget(e, out var target, out var insertAfter))
+        {
+            e.Effects = DragDropEffects.None;
+            e.Handled = true;
+            ClearBoxDropIndicator();
+            return;
+        }
+
+        if (!ReferenceEquals(_boxDropTarget, target)
+            || !string.Equals(
+                target.Tag as string,
+                insertAfter ? "DropAfter" : "DropBefore",
+                StringComparison.Ordinal))
+        {
+            ClearBoxDropIndicator();
+            _boxDropTarget = target;
+            target.Tag = insertAfter ? "DropAfter" : "DropBefore";
+            BoxesList.ScrollIntoView(target.DataContext);
+        }
+
+        e.Effects = DragDropEffects.Move;
+        e.Handled = true;
+    }
+
+    private async void OnBoxesDrop(object sender, DragEventArgs e)
+    {
+        if (!e.Data.GetDataPresent(BoxListDragFormat)
+            || e.Data.GetData(BoxListDragFormat) is not string draggedIdText
+            || !Guid.TryParse(draggedIdText, out var draggedId)
+            || !TryGetBoxDropTarget(e, out var target, out var insertAfter)
+            || target.DataContext is not BoxViewModel targetBox)
+        {
+            ClearBoxDropIndicator();
+            return;
+        }
+
+        e.Effects = DragDropEffects.Move;
+        e.Handled = true;
+        ClearBoxDropIndicator();
+        await ViewModel.ReorderBoxAsync(draggedId, targetBox.Id, insertAfter);
+    }
+
+    private bool TryGetBoxDropTarget(
+        DragEventArgs e,
+        out ListBoxItem target,
+        out bool insertAfter)
+    {
+        var position = e.GetPosition(BoxesList);
+        var hit = BoxesList.InputHitTest(position) as DependencyObject;
+        var container = hit is null
+            ? null
+            : ItemsControl.ContainerFromElement(BoxesList, hit) as ListBoxItem;
+
+        if (container is null && BoxesList.Items.Count > 0)
+        {
+            container = BoxesList.ItemContainerGenerator.ContainerFromIndex(
+                BoxesList.Items.Count - 1) as ListBoxItem;
+            insertAfter = true;
+        }
+        else
+        {
+            insertAfter = container is not null
+                && e.GetPosition(container).Y >= container.ActualHeight / 2.0;
+        }
+
+        target = container!;
+        return container is not null;
+    }
+
+    private void ClearBoxDropIndicator()
+    {
+        if (_boxDropTarget is not null)
+        {
+            _boxDropTarget.Tag = null;
+            _boxDropTarget = null;
         }
     }
 

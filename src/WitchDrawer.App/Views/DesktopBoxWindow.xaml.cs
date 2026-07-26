@@ -64,6 +64,7 @@ public partial class DesktopBoxWindow : Window
         SourceInitialized += OnSourceInitialized;
         Loaded += OnLoaded;
         AppThemeManager.ThemeChanged += OnThemeChanged;
+        AppThemeManager.CrystalBoxTransparencyChanged += OnCrystalBoxTransparencyChanged;
         Activated += OnWindowActivated;
         Deactivated += OnWindowDeactivated;
         // Desktop boxes often stay non-activated (ShowActivated=false + HWND_BOTTOM/NOACTIVATE).
@@ -121,6 +122,7 @@ public partial class DesktopBoxWindow : Window
         SourceInitialized -= OnSourceInitialized;
         Loaded -= OnLoaded;
         AppThemeManager.ThemeChanged -= OnThemeChanged;
+        AppThemeManager.CrystalBoxTransparencyChanged -= OnCrystalBoxTransparencyChanged;
         Activated -= OnWindowActivated;
         Deactivated -= OnWindowDeactivated;
         if (Application.Current is not null)
@@ -138,7 +140,7 @@ public partial class DesktopBoxWindow : Window
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
-        AppThemeManager.ApplyToWindow(this);
+        ApplyThemeAppearance();
         WindowMotion.PopIn(this, 0.97, 140);
         if (ViewModel.IsTodoBox)
         {
@@ -153,6 +155,17 @@ public partial class DesktopBoxWindow : Window
 
     private void OnThemeChanged(object? sender, AppTheme theme)
     {
+        ApplyThemeAppearance();
+    }
+
+    private void OnCrystalBoxTransparencyChanged(object? sender, bool enabled)
+    {
+        ApplyThemeAppearance();
+    }
+
+    private void ApplyThemeAppearance()
+    {
+        AppThemeManager.ApplyDesktopBoxResources(Resources);
         AppThemeManager.ApplyToWindow(this);
     }
 

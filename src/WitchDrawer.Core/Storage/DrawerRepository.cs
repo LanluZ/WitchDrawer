@@ -184,6 +184,42 @@ public sealed class DrawerRepository
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    public async Task UpdateBoxSortOrdersAsync(
+        IReadOnlyList<Guid> orderedBoxIds,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = CreateConnection();
+        await connection.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+
+        var command = connection.CreateCommand();
+        command.Transaction = (SqliteTransaction)transaction;
+        command.CommandText =
+            """
+            UPDATE Boxes
+            SET SortOrder = $sortOrder, UpdatedAt = $updatedAt
+            WHERE Id = $id;
+            """;
+        var idParameter = command.Parameters.Add("$id", SqliteType.Text);
+        var sortOrderParameter = command.Parameters.Add("$sortOrder", SqliteType.Integer);
+        var updatedAtParameter = command.Parameters.Add("$updatedAt", SqliteType.Text);
+        var updatedAt = ToDb(DateTimeOffset.UtcNow);
+
+        for (var index = 0; index < orderedBoxIds.Count; index++)
+        {
+            idParameter.Value = orderedBoxIds[index].ToString();
+            sortOrderParameter.Value = index;
+            updatedAtParameter.Value = updatedAt;
+
+            if (await command.ExecuteNonQueryAsync(cancellationToken) != 1)
+            {
+                throw new InvalidOperationException("Cannot reorder a box that does not exist.");
+            }
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+    }
+
     public async Task RemoveBoxAsync(Guid boxId, CancellationToken cancellationToken = default)
     {
         await using var connection = CreateConnection();

@@ -6,10 +6,39 @@ namespace WitchDrawer.App.Infrastructure;
 public static class AppThemeManager
 {
     private static AppTheme _currentTheme = AppTheme.Moe;
+    private static bool _useTransparentCrystalBoxes;
+
+    private static readonly IReadOnlyDictionary<string, string> TransparentCrystalBoxColors =
+        new Dictionary<string, string>
+        {
+            ["AppBackgroundBrush"] = "#66FFFFFF",
+            ["PanelBrush"] = "#4DFFFFFF",
+            ["PanelAltBrush"] = "#33FFFFFF",
+            ["BorderBrushSoft"] = "#40FFFFFF",
+            ["TextPrimaryBrush"] = "#111827",
+            ["TextMutedBrush"] = "#4B5563",
+            ["AccentBrush"] = "#0EA5E9",
+            ["AccentSoftBrush"] = "#330EA5E9",
+            ["GlassSurfaceBrush"] = "#4DFFFFFF",
+            ["GlassInnerBrush"] = "#26FFFFFF",
+            ["GlassStrokeBrush"] = "#66FFFFFF",
+            ["PositiveBrush"] = "#10B981",
+            ["PositiveSoftBrush"] = "#3310B981",
+            ["DangerBrush"] = "#EF4444",
+            ["DangerSoftBrush"] = "#33EF4444",
+            ["HoverBrush"] = "#40FFFFFF",
+            ["CardShadowBrush"] = "#1A000000",
+            ["DropZoneBrush"] = "#1AFFFFFF",
+            ["WindowOverlayBrush"] = "#33FFFFFF"
+        };
 
     public static event EventHandler<AppTheme>? ThemeChanged;
 
+    public static event EventHandler<bool>? CrystalBoxTransparencyChanged;
+
     public static AppTheme CurrentTheme => _currentTheme;
+
+    public static bool UseTransparentCrystalBoxes => _useTransparentCrystalBoxes;
 
     public static void Apply(AppTheme theme)
     {
@@ -83,6 +112,37 @@ public static class AppThemeManager
         }
 
         ThemeChanged?.Invoke(null, theme);
+    }
+
+    public static void SetCrystalBoxTransparency(bool enabled)
+    {
+        if (_useTransparentCrystalBoxes == enabled)
+        {
+            return;
+        }
+
+        _useTransparentCrystalBoxes = enabled;
+        CrystalBoxTransparencyChanged?.Invoke(null, enabled);
+    }
+
+    public static void ApplyDesktopBoxResources(ResourceDictionary resources)
+    {
+        foreach (var key in TransparentCrystalBoxColors.Keys)
+        {
+            resources.Remove(key);
+        }
+
+        if (_currentTheme != AppTheme.Crystal || !_useTransparentCrystalBoxes)
+        {
+            return;
+        }
+
+        foreach (var (key, color) in TransparentCrystalBoxColors)
+        {
+            var brush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(color));
+            brush.Freeze();
+            resources[key] = brush;
+        }
     }
 
     public static void ApplyToWindow(Window window)

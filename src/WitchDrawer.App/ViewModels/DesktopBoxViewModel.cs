@@ -320,10 +320,8 @@ public sealed class DesktopBoxViewModel : ObservableObject
                 return;
             }
 
-            // Layout density is global (shared DesktopBoxLayoutSettings, controlled from
-            // Settings). Boxes intentionally do NOT apply a per-box preset: every box shares
-            // one settings instance, so re-applying each box's own preset on load made boxes
-            // fight over the slot size and the windows visibly oscillated on every reload.
+            // Each desktop box owns its layout settings. The manager restores the preset
+            // before the window is created so boxes can use different icon sizes.
 
             var items = await _drawerService.GetItemsAsync(BoxId);
             var isPixelated = Type == BoxType.Pixel;

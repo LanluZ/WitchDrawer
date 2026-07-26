@@ -1,5 +1,7 @@
 using System.Threading;
 using System.Windows;
+using CommunityToolkit.Mvvm.Messaging;
+using WitchDrawer.App.Messages;
 using WitchDrawer.App.ViewModels;
 using WitchDrawer.App.Views;
 using WitchDrawer.Core.Abstractions;
@@ -17,7 +19,6 @@ public sealed class DesktopBoxManager
     private readonly TodoService _todoService;
     private readonly IFileLauncher _launcher;
     private readonly IAppLogger _logger;
-    private readonly DesktopBoxLayoutSettings _layoutSettings;
     private readonly Dictionary<Guid, DesktopBoxWindow> _windows = [];
     private bool _closing;
     private GuideLineWindow? _verticalGuide;
@@ -28,14 +29,15 @@ public sealed class DesktopBoxManager
         DrawerService drawerService,
         TodoService todoService,
         IFileLauncher launcher,
-        IAppLogger logger,
-        DesktopBoxLayoutSettings layoutSettings)
+        IAppLogger logger)
     {
         _drawerService = drawerService;
         _todoService = todoService;
         _launcher = launcher;
         _logger = logger;
-        _layoutSettings = layoutSettings;
+        WeakReferenceMessenger.Default.Register<DesktopBoxManager, BoxLayoutPresetChangedMessage>(
+            this,
+            static (recipient, message) => recipient.ApplyBoxLayoutPreset(message));
     }
 
     public event EventHandler? ItemsChanged;
@@ -86,13 +88,18 @@ public sealed class DesktopBoxManager
                 var box = boxes[index];
                 if (!_windows.TryGetValue(box.Id, out var window))
                 {
+                    var layoutSettings = new DesktopBoxLayoutSettings();
+                    var savedPreset = await _drawerService.GetSettingAsync(
+                        BoxViewModel.GetLayoutPresetSettingKey(box.Id));
+                    layoutSettings.ApplyPresetWithoutCallback(savedPreset);
+
                     var viewModel = new DesktopBoxViewModel(
                         box,
                         _drawerService,
                         _todoService,
                         _launcher,
                         _logger,
-                        _layoutSettings);
+                        layoutSettings);
                     viewModel.ItemsChanged += (_, _) => ItemsChanged?.Invoke(this, EventArgs.Empty);
 
                     window = new DesktopBoxWindow(viewModel);
@@ -228,6 +235,17 @@ public sealed class DesktopBoxManager
         _verticalGuide = null;
         _horizontalGuide?.Close();
         _horizontalGuide = null;
+        WeakReferenceMessenger.Default.UnregisterAll(this);
+    }
+
+    private void ApplyBoxLayoutPreset(BoxLayoutPresetChangedMessage message)
+    {
+        if (!_windows.TryGetValue(message.BoxId, out var window))
+        {
+            return;
+        }
+
+        window.ViewModel.LayoutSettings.ApplyPresetWithoutCallback(message.Preset);
     }
 
     private async Task PlaceWindowAsync(Window window, Guid boxId, int fallbackIndex)
@@ -364,19 +382,22 @@ public sealed class DesktopBoxManager
     private void PerformSnappingAndAlignment(DesktopBoxWindow draggedWindow, bool applySnap = true)
     {
         const double snapThreshold = 10.0;
+        const double visualGap = 8.0;
 
-        double currentLeft = draggedWindow.Left;
-        double currentTop = draggedWindow.Top;
-        double width = draggedWindow.ActualWidth;
-        double height = draggedWindow.ActualHeight;
-
-        double rightA = currentLeft + width;
-        double bottomA = currentTop + height;
+        var boundsA = GetVisibleBounds(draggedWindow);
+        double currentLeft = boundsA.Left;
+        double currentTop = boundsA.Top;
+        double width = boundsA.Width;
+        double height = boundsA.Height;
+        double rightA = boundsA.Right;
+        double bottomA = boundsA.Bottom;
         double hCenterA = currentLeft + width / 2.0;
         double vCenterA = currentTop + height / 2.0;
+        double leftInset = boundsA.Left - draggedWindow.Left;
+        double topInset = boundsA.Top - draggedWindow.Top;
 
-        double? bestSnappedLeft = null;
-        double? bestSnappedTop = null;
+        double? bestSnappedVisibleLeft = null;
+        double? bestSnappedVisibleTop = null;
 
         double? verticalGuideX = null;
         double verticalGuideYMin = double.MaxValue;
@@ -394,48 +415,48 @@ public sealed class DesktopBoxManager
                 continue;
             }
 
-            double leftB = otherWindow.Left;
-            double topB = otherWindow.Top;
-            double widthB = otherWindow.ActualWidth;
-            double heightB = otherWindow.ActualHeight;
-
-            double rightB = leftB + widthB;
-            double bottomB = topB + heightB;
+            var boundsB = GetVisibleBounds(otherWindow);
+            double leftB = boundsB.Left;
+            double topB = boundsB.Top;
+            double widthB = boundsB.Width;
+            double heightB = boundsB.Height;
+            double rightB = boundsB.Right;
+            double bottomB = boundsB.Bottom;
             double hCenterB = leftB + widthB / 2.0;
             double vCenterB = topB + heightB / 2.0;
 
             // 1. Vertical snapping
             if (Math.Abs(currentLeft - leftB) <= snapThreshold)
             {
-                bestSnappedLeft = leftB;
+                bestSnappedVisibleLeft = leftB;
                 verticalGuideX = leftB;
                 verticalGuideYMin = Math.Min(verticalGuideYMin, Math.Min(currentTop, topB));
                 verticalGuideYMax = Math.Max(verticalGuideYMax, Math.Max(bottomA, bottomB));
             }
             else if (Math.Abs(rightA - rightB) <= snapThreshold)
             {
-                bestSnappedLeft = rightB - width;
+                bestSnappedVisibleLeft = rightB - width;
                 verticalGuideX = rightB;
                 verticalGuideYMin = Math.Min(verticalGuideYMin, Math.Min(currentTop, topB));
                 verticalGuideYMax = Math.Max(verticalGuideYMax, Math.Max(bottomA, bottomB));
             }
-            else if (Math.Abs(currentLeft - rightB) <= snapThreshold)
+            else if (Math.Abs(currentLeft - (rightB + visualGap)) <= snapThreshold)
             {
-                bestSnappedLeft = rightB;
-                verticalGuideX = rightB;
+                bestSnappedVisibleLeft = rightB + visualGap;
+                verticalGuideX = rightB + visualGap / 2.0;
                 verticalGuideYMin = Math.Min(verticalGuideYMin, Math.Min(currentTop, topB));
                 verticalGuideYMax = Math.Max(verticalGuideYMax, Math.Max(bottomA, bottomB));
             }
-            else if (Math.Abs(rightA - leftB) <= snapThreshold)
+            else if (Math.Abs(rightA - (leftB - visualGap)) <= snapThreshold)
             {
-                bestSnappedLeft = leftB - width;
-                verticalGuideX = leftB;
+                bestSnappedVisibleLeft = leftB - visualGap - width;
+                verticalGuideX = leftB - visualGap / 2.0;
                 verticalGuideYMin = Math.Min(verticalGuideYMin, Math.Min(currentTop, topB));
                 verticalGuideYMax = Math.Max(verticalGuideYMax, Math.Max(bottomA, bottomB));
             }
             else if (Math.Abs(hCenterA - hCenterB) <= snapThreshold)
             {
-                bestSnappedLeft = hCenterB - width / 2.0;
+                bestSnappedVisibleLeft = hCenterB - width / 2.0;
                 verticalGuideX = hCenterB;
                 verticalGuideYMin = Math.Min(verticalGuideYMin, Math.Min(currentTop, topB));
                 verticalGuideYMax = Math.Max(verticalGuideYMax, Math.Max(bottomA, bottomB));
@@ -444,35 +465,35 @@ public sealed class DesktopBoxManager
             // 2. Horizontal snapping
             if (Math.Abs(currentTop - topB) <= snapThreshold)
             {
-                bestSnappedTop = topB;
+                bestSnappedVisibleTop = topB;
                 horizontalGuideY = topB;
                 horizontalGuideXMin = Math.Min(horizontalGuideXMin, Math.Min(currentLeft, leftB));
                 horizontalGuideXMax = Math.Max(horizontalGuideXMax, Math.Max(rightA, rightB));
             }
             else if (Math.Abs(bottomA - bottomB) <= snapThreshold)
             {
-                bestSnappedTop = bottomB - height;
+                bestSnappedVisibleTop = bottomB - height;
                 horizontalGuideY = bottomB;
                 horizontalGuideXMin = Math.Min(horizontalGuideXMin, Math.Min(currentLeft, leftB));
                 horizontalGuideXMax = Math.Max(horizontalGuideXMax, Math.Max(rightA, rightB));
             }
-            else if (Math.Abs(currentTop - bottomB) <= snapThreshold)
+            else if (Math.Abs(currentTop - (bottomB + visualGap)) <= snapThreshold)
             {
-                bestSnappedTop = bottomB;
-                horizontalGuideY = bottomB;
+                bestSnappedVisibleTop = bottomB + visualGap;
+                horizontalGuideY = bottomB + visualGap / 2.0;
                 horizontalGuideXMin = Math.Min(horizontalGuideXMin, Math.Min(currentLeft, leftB));
                 horizontalGuideXMax = Math.Max(horizontalGuideXMax, Math.Max(rightA, rightB));
             }
-            else if (Math.Abs(bottomA - topB) <= snapThreshold)
+            else if (Math.Abs(bottomA - (topB - visualGap)) <= snapThreshold)
             {
-                bestSnappedTop = topB - height;
-                horizontalGuideY = topB;
+                bestSnappedVisibleTop = topB - visualGap - height;
+                horizontalGuideY = topB - visualGap / 2.0;
                 horizontalGuideXMin = Math.Min(horizontalGuideXMin, Math.Min(currentLeft, leftB));
                 horizontalGuideXMax = Math.Max(horizontalGuideXMax, Math.Max(rightA, rightB));
             }
             else if (Math.Abs(vCenterA - vCenterB) <= snapThreshold)
             {
-                bestSnappedTop = vCenterB - height / 2.0;
+                bestSnappedVisibleTop = vCenterB - height / 2.0;
                 horizontalGuideY = vCenterB;
                 horizontalGuideXMin = Math.Min(horizontalGuideXMin, Math.Min(currentLeft, leftB));
                 horizontalGuideXMax = Math.Max(horizontalGuideXMax, Math.Max(rightA, rightB));
@@ -481,13 +502,13 @@ public sealed class DesktopBoxManager
 
         if (applySnap)
         {
-            if (bestSnappedLeft.HasValue)
+            if (bestSnappedVisibleLeft.HasValue)
             {
-                draggedWindow.Left = bestSnappedLeft.Value;
+                draggedWindow.Left = bestSnappedVisibleLeft.Value - leftInset;
             }
-            if (bestSnappedTop.HasValue)
+            if (bestSnappedVisibleTop.HasValue)
             {
-                draggedWindow.Top = bestSnappedTop.Value;
+                draggedWindow.Top = bestSnappedVisibleTop.Value - topInset;
             }
         }
 
@@ -508,5 +529,15 @@ public sealed class DesktopBoxManager
         {
             HideHorizontalGuide();
         }
+    }
+
+    private static Rect GetVisibleBounds(DesktopBoxWindow window)
+    {
+        var margin = window.WindowBorder.Margin;
+        return new Rect(
+            window.Left + margin.Left,
+            window.Top + margin.Top,
+            Math.Max(0, window.ActualWidth - margin.Left - margin.Right),
+            Math.Max(0, window.ActualHeight - margin.Top - margin.Bottom));
     }
 }
