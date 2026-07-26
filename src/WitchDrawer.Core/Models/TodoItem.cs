@@ -2,6 +2,7 @@ namespace WitchDrawer.Core.Models;
 
 public sealed record TodoItem(
     Guid Id,
+    Guid BoxId,
     string Title,
     bool IsCompleted,
     int SortOrder,

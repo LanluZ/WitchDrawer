@@ -27,6 +27,11 @@ public sealed record BoxDeleteResult(
                 return $"已删除 {BoxName}，引用已移除";
             }
 
+            if (BoxType == BoxType.Todo)
+            {
+                return $"已删除 {BoxName}，待办事项已清除";
+            }
+
             if (RestoredCount <= 0)
             {
                 return $"已删除 {BoxName}";

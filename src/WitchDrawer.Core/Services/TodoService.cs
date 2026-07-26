@@ -14,22 +14,33 @@ public sealed class TodoService
         _repository = repository;
     }
 
-    public Task<IReadOnlyList<TodoItem>> GetTodosAsync(CancellationToken cancellationToken = default)
+    public Task<IReadOnlyList<TodoItem>> GetTodosAsync(
+        Guid boxId,
+        CancellationToken cancellationToken = default)
     {
-        return _repository.GetTodosAsync(cancellationToken);
+        return _repository.GetTodosAsync(boxId, cancellationToken);
     }
 
     public async Task<TodoItem> AddTodoAsync(
+        Guid boxId,
         string title,
         CancellationToken cancellationToken = default)
     {
+        var box = await _repository.GetBoxAsync(boxId, cancellationToken)
+            ?? throw new InvalidOperationException("待办盒不存在或已被删除。");
+        if (box.Type != BoxType.Todo)
+        {
+            throw new InvalidOperationException("只能向待办盒添加待办事项。");
+        }
+
         var normalizedTitle = NormalizeTitle(title);
         var now = DateTimeOffset.UtcNow;
         var todo = new TodoItem(
             Guid.NewGuid(),
+            boxId,
             normalizedTitle,
             IsCompleted: false,
-            await _repository.GetNextTodoSortOrderAsync(cancellationToken),
+            await _repository.GetNextTodoSortOrderAsync(boxId, cancellationToken),
             now,
             now);
 

@@ -209,6 +209,20 @@ public sealed class DrawerServiceTests
     }
 
     [Fact]
+    public async Task ImportPathAsync_TodoBoxRejectsFileWithoutMovingIt()
+    {
+        using var workspace = await TestWorkspace.CreateAsync();
+        var todoBox = await workspace.Service.CreateBoxAsync("todo", BoxType.Todo);
+        var sourcePath = workspace.CreateSourceFile("todo-source", "keep.txt", "content");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => workspace.Service.ImportPathAsync(todoBox.Id, sourcePath));
+
+        Assert.True(File.Exists(sourcePath));
+        Assert.Empty(await workspace.Service.GetItemsAsync(todoBox.Id));
+    }
+
+    [Fact]
     public async Task ImportPathAsync_NormalBoxAddsSuffixForConflictingNames()
     {
         using var workspace = await TestWorkspace.CreateAsync();

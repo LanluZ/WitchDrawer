@@ -65,22 +65,28 @@ public sealed class DrawerRepository
 
                 CREATE TABLE IF NOT EXISTS Todos (
                     Id TEXT PRIMARY KEY,
+                    BoxId TEXT NOT NULL,
                     Title TEXT NOT NULL,
                     IsCompleted INTEGER NOT NULL,
                     SortOrder INTEGER NOT NULL,
                     CreatedAt TEXT NOT NULL,
                     UpdatedAt TEXT NOT NULL,
-                    CompletedAt TEXT NULL
+                    CompletedAt TEXT NULL,
+                    FOREIGN KEY(BoxId) REFERENCES Boxes(Id) ON DELETE CASCADE
                 );
 
                 CREATE INDEX IF NOT EXISTS IX_Items_BoxId ON Items(BoxId);
                 CREATE INDEX IF NOT EXISTS IX_Items_DisplayName ON Items(DisplayName);
-                CREATE INDEX IF NOT EXISTS IX_Todos_StateSort ON Todos(IsCompleted, SortOrder);
                 """,
                 cancellationToken);
 
             await EnsureColumnAsync(connection, "Items", "GridColumn", "INTEGER NULL", cancellationToken);
             await EnsureColumnAsync(connection, "Items", "GridRow", "INTEGER NULL", cancellationToken);
+            await EnsureColumnAsync(connection, "Todos", "BoxId", "TEXT NULL", cancellationToken);
+            await ExecuteNonQueryAsync(
+                connection,
+                "CREATE INDEX IF NOT EXISTS IX_Todos_BoxStateSort ON Todos(BoxId, IsCompleted, SortOrder);",
+                cancellationToken);
         }
         catch (Exception exception) when (IsDatabaseAccessFailure(exception))
         {
@@ -174,12 +180,21 @@ public sealed class DrawerRepository
     {
         await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
-        var command = connection.CreateCommand();
-        command.CommandText = "DELETE FROM Boxes WHERE Id = $id;";
-        command.Parameters.AddWithValue("$id", boxId.ToString());
+        var removeTodosCommand = connection.CreateCommand();
+        removeTodosCommand.Transaction = (SqliteTransaction)transaction;
+        removeTodosCommand.CommandText = "DELETE FROM Todos WHERE BoxId = $id;";
+        removeTodosCommand.Parameters.AddWithValue("$id", boxId.ToString());
+        await removeTodosCommand.ExecuteNonQueryAsync(cancellationToken);
 
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        var removeBoxCommand = connection.CreateCommand();
+        removeBoxCommand.Transaction = (SqliteTransaction)transaction;
+        removeBoxCommand.CommandText = "DELETE FROM Boxes WHERE Id = $id;";
+        removeBoxCommand.Parameters.AddWithValue("$id", boxId.ToString());
+        await removeBoxCommand.ExecuteNonQueryAsync(cancellationToken);
+
+        await transaction.CommitAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyList<DrawerItem>> GetItemsAsync(Guid? boxId = null, CancellationToken cancellationToken = default)
@@ -370,7 +385,9 @@ public sealed class DrawerRepository
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    public async Task<IReadOnlyList<TodoItem>> GetTodosAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<TodoItem>> GetTodosAsync(
+        Guid boxId,
+        CancellationToken cancellationToken = default)
     {
         await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
@@ -378,10 +395,12 @@ public sealed class DrawerRepository
         var command = connection.CreateCommand();
         command.CommandText =
             """
-            SELECT Id, Title, IsCompleted, SortOrder, CreatedAt, UpdatedAt, CompletedAt
+            SELECT Id, BoxId, Title, IsCompleted, SortOrder, CreatedAt, UpdatedAt, CompletedAt
             FROM Todos
+            WHERE BoxId = $boxId
             ORDER BY IsCompleted, SortOrder, CreatedAt;
             """;
+        command.Parameters.AddWithValue("$boxId", boxId.ToString());
 
         var todos = new List<TodoItem>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -401,7 +420,7 @@ public sealed class DrawerRepository
         var command = connection.CreateCommand();
         command.CommandText =
             """
-            SELECT Id, Title, IsCompleted, SortOrder, CreatedAt, UpdatedAt, CompletedAt
+            SELECT Id, BoxId, Title, IsCompleted, SortOrder, CreatedAt, UpdatedAt, CompletedAt
             FROM Todos
             WHERE Id = $id;
             """;
@@ -419,10 +438,11 @@ public sealed class DrawerRepository
         var command = connection.CreateCommand();
         command.CommandText =
             """
-            INSERT INTO Todos (Id, Title, IsCompleted, SortOrder, CreatedAt, UpdatedAt, CompletedAt)
-            VALUES ($id, $title, $isCompleted, $sortOrder, $createdAt, $updatedAt, $completedAt);
+            INSERT INTO Todos (Id, BoxId, Title, IsCompleted, SortOrder, CreatedAt, UpdatedAt, CompletedAt)
+            VALUES ($id, $boxId, $title, $isCompleted, $sortOrder, $createdAt, $updatedAt, $completedAt);
             """;
         command.Parameters.AddWithValue("$id", todo.Id.ToString());
+        command.Parameters.AddWithValue("$boxId", todo.BoxId.ToString());
         command.Parameters.AddWithValue("$title", todo.Title);
         command.Parameters.AddWithValue("$isCompleted", todo.IsCompleted ? 1 : 0);
         command.Parameters.AddWithValue("$sortOrder", todo.SortOrder);
@@ -528,13 +548,16 @@ public sealed class DrawerRepository
         return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
     }
 
-    public async Task<int> GetNextTodoSortOrderAsync(CancellationToken cancellationToken = default)
+    public async Task<int> GetNextTodoSortOrderAsync(
+        Guid boxId,
+        CancellationToken cancellationToken = default)
     {
         await using var connection = CreateConnection();
         await connection.OpenAsync(cancellationToken);
 
         var command = connection.CreateCommand();
-        command.CommandText = "SELECT COALESCE(MAX(SortOrder), -1) + 1 FROM Todos;";
+        command.CommandText = "SELECT COALESCE(MAX(SortOrder), -1) + 1 FROM Todos WHERE BoxId = $boxId;";
+        command.Parameters.AddWithValue("$boxId", boxId.ToString());
         return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
     }
 
@@ -654,12 +677,13 @@ public sealed class DrawerRepository
     {
         return new TodoItem(
             Guid.Parse(reader.GetString(0)),
-            reader.GetString(1),
-            reader.GetInt32(2) != 0,
-            reader.GetInt32(3),
-            FromDb(reader.GetString(4)),
+            Guid.Parse(reader.GetString(1)),
+            reader.GetString(2),
+            reader.GetInt32(3) != 0,
+            reader.GetInt32(4),
             FromDb(reader.GetString(5)),
-            reader.IsDBNull(6) ? null : FromDb(reader.GetString(6)));
+            FromDb(reader.GetString(6)),
+            reader.IsDBNull(7) ? null : FromDb(reader.GetString(7)));
     }
 
     private static string ToDb(DateTimeOffset value)

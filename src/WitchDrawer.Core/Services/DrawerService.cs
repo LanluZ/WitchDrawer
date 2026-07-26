@@ -83,6 +83,11 @@ public sealed class DrawerService
         var box = await _repository.GetBoxAsync(boxId, cancellationToken)
             ?? throw new InvalidOperationException("Box does not exist.");
 
+        if (box.Type == BoxType.Todo)
+        {
+            throw new InvalidOperationException("Todo boxes do not accept files.");
+        }
+
         var fullSourcePath = PathSafety.GetFullExistingPath(sourcePath);
         var isDirectory = Directory.Exists(fullSourcePath);
         var itemKind = isDirectory ? ItemKind.Directory : ItemKind.File;
@@ -167,6 +172,11 @@ public sealed class DrawerService
             ?? throw new InvalidOperationException("Source box does not exist.");
         var targetBox = await _repository.GetBoxAsync(targetBoxId, cancellationToken)
             ?? throw new InvalidOperationException("Target box does not exist.");
+
+        if (sourceBox.Type == BoxType.Todo || targetBox.Type == BoxType.Todo)
+        {
+            throw new InvalidOperationException("Files cannot be moved into or out of a todo box.");
+        }
 
         if (item.BoxId == targetBoxId)
         {
@@ -329,7 +339,7 @@ public sealed class DrawerService
         var box = await _repository.GetBoxAsync(boxId, cancellationToken)
             ?? throw new InvalidOperationException("Box does not exist.");
 
-        if (box.Type == BoxType.Mapping)
+        if (box.Type is BoxType.Mapping or BoxType.Todo)
         {
             await _repository.RemoveBoxAsync(boxId, cancellationToken);
             return new BoxDeleteResult(

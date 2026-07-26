@@ -239,18 +239,6 @@ public partial class MainWindow : Window
         MainItemsList.Focus();
     }
 
-    private async void OnTodoTitleKeyDown(object sender, KeyEventArgs e)
-    {
-        if (e.Key != Key.Enter || !ViewModel.AddTodoCommand.CanExecute(null))
-        {
-            return;
-        }
-
-        e.Handled = true;
-        await ViewModel.AddTodoCommand.ExecuteAsync(null);
-        TodoTitleTextBox.Focus();
-    }
-
     private void OnCreateBoxClicked(object sender, RoutedEventArgs e)
     {
         CreateBoxPopup.IsOpen = true;
@@ -272,6 +260,12 @@ public partial class MainWindow : Window
     {
         CreateBoxPopup.IsOpen = false;
         await ViewModel.CreatePixelBoxCommand.ExecuteAsync(null);
+    }
+
+    private async void OnCreateTodoBoxClicked(object sender, RoutedEventArgs e)
+    {
+        CreateBoxPopup.IsOpen = false;
+        await ViewModel.CreateTodoBoxCommand.ExecuteAsync(null);
     }
 
     private void OnDeleteBoxClicked(object sender, RoutedEventArgs e)

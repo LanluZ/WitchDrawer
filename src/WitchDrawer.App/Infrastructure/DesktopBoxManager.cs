@@ -14,6 +14,7 @@ public sealed class DesktopBoxManager
     private const char PositionSeparator = ',';
 
     private readonly DrawerService _drawerService;
+    private readonly TodoService _todoService;
     private readonly IFileLauncher _launcher;
     private readonly IAppLogger _logger;
     private readonly DesktopBoxLayoutSettings _layoutSettings;
@@ -25,11 +26,13 @@ public sealed class DesktopBoxManager
 
     public DesktopBoxManager(
         DrawerService drawerService,
+        TodoService todoService,
         IFileLauncher launcher,
         IAppLogger logger,
         DesktopBoxLayoutSettings layoutSettings)
     {
         _drawerService = drawerService;
+        _todoService = todoService;
         _launcher = launcher;
         _logger = logger;
         _layoutSettings = layoutSettings;
@@ -83,7 +86,13 @@ public sealed class DesktopBoxManager
                 var box = boxes[index];
                 if (!_windows.TryGetValue(box.Id, out var window))
                 {
-                    var viewModel = new DesktopBoxViewModel(box, _drawerService, _launcher, _logger, _layoutSettings);
+                    var viewModel = new DesktopBoxViewModel(
+                        box,
+                        _drawerService,
+                        _todoService,
+                        _launcher,
+                        _logger,
+                        _layoutSettings);
                     viewModel.ItemsChanged += (_, _) => ItemsChanged?.Invoke(this, EventArgs.Empty);
 
                     window = new DesktopBoxWindow(viewModel);

@@ -20,16 +20,13 @@ public sealed class MainViewModel : ObservableObject
     private readonly IFileLauncher _launcher;
     private readonly IAppLogger _logger;
     private readonly QuickPanelViewModel _quickPanelViewModel;
-    private readonly TodoService _todoService;
     private readonly UpdateService _updateService;
     private BoxViewModel? _selectedBox;
     private CancellationTokenSource? _itemsLoadCts;
     private int _itemsLoadVersion;
     private bool _isBusy;
-    private bool _isTodoPage;
     private bool _isSettingsPage;
     private bool _isAboutPage;
-    private string _newTodoTitle = string.Empty;
     private string _statusText = "准备就绪";
     private string _themeLabel = "清透雅致";
     private AppTheme _currentTheme;
@@ -44,7 +41,6 @@ public sealed class MainViewModel : ObservableObject
         IAppLogger logger,
         QuickPanelViewModel quickPanelViewModel,
         DesktopBoxLayoutSettings desktopBoxLayoutSettings,
-        TodoService todoService,
         UpdateService updateService)
     {
         _drawerService = drawerService;
@@ -52,13 +48,13 @@ public sealed class MainViewModel : ObservableObject
         _logger = logger;
         _quickPanelViewModel = quickPanelViewModel;
         DesktopBoxLayout = desktopBoxLayoutSettings;
-        _todoService = todoService;
         _updateService = updateService;
 
         LoadCommand = new AsyncRelayCommand(LoadAsync);
         CreateNormalBoxCommand = new AsyncRelayCommand(() => CreateBoxAsync(BoxType.Normal));
         CreateMappingBoxCommand = new AsyncRelayCommand(() => CreateBoxAsync(BoxType.Mapping));
         CreatePixelBoxCommand = new AsyncRelayCommand(() => CreateBoxAsync(BoxType.Pixel));
+        CreateTodoBoxCommand = new AsyncRelayCommand(() => CreateBoxAsync(BoxType.Todo));
         DeleteSelectedBoxCommand = new AsyncRelayCommand(DeleteSelectedBoxAsync, () => SelectedBox is not null);
         RenameSelectedBoxCommand = new AsyncRelayCommand<string?>(RenameSelectedBoxAsync, _ => SelectedBox is not null);
         OpenItemCommand = new AsyncRelayCommand<DrawerItemViewModel?>(OpenItemAsync);
@@ -70,13 +66,9 @@ public sealed class MainViewModel : ObservableObject
         ApplyCrystalThemeCommand = new AsyncRelayCommand(() => ApplyThemeAsync(AppTheme.Crystal));
         ToggleLaunchOnStartupCommand = new AsyncRelayCommand(ToggleLaunchOnStartupAsync);
         CheckForUpdateCommand = new AsyncRelayCommand(CheckForUpdateAsync);
-        AddTodoCommand = new AsyncRelayCommand(AddTodoAsync, () => !string.IsNullOrWhiteSpace(NewTodoTitle));
-        ToggleTodoCommand = new AsyncRelayCommand<TodoItemViewModel?>(ToggleTodoAsync);
-        DeleteTodoCommand = new AsyncRelayCommand<TodoItemViewModel?>(DeleteTodoAsync);
-        ShowDashboardCommand = new RelayCommand(() => SetPage(todo: false, settings: false, about: false));
-        ShowTodoCommand = new RelayCommand(() => SetPage(todo: true, settings: false, about: false));
-        ShowSettingsCommand = new RelayCommand(() => SetPage(todo: false, settings: true, about: false));
-        ShowAboutCommand = new RelayCommand(() => SetPage(todo: false, settings: false, about: true));
+        ShowDashboardCommand = new RelayCommand(() => { IsSettingsPage = false; IsAboutPage = false; });
+        ShowSettingsCommand = new RelayCommand(() => { IsSettingsPage = true; IsAboutPage = false; });
+        ShowAboutCommand = new RelayCommand(() => { IsSettingsPage = false; IsAboutPage = true; });
     }
 
     public event EventHandler? BoxesChanged;
@@ -87,8 +79,6 @@ public sealed class MainViewModel : ObservableObject
 
     public ObservableCollection<DrawerItemViewModel> Items { get; } = [];
 
-    public ObservableCollection<TodoItemViewModel> TodoItems { get; } = [];
-
     public DesktopBoxLayoutSettings DesktopBoxLayout { get; }
 
     public IAsyncRelayCommand LoadCommand { get; }
@@ -98,6 +88,8 @@ public sealed class MainViewModel : ObservableObject
     public IAsyncRelayCommand CreateMappingBoxCommand { get; }
 
     public IAsyncRelayCommand CreatePixelBoxCommand { get; }
+
+    public IAsyncRelayCommand CreateTodoBoxCommand { get; }
 
     public IAsyncRelayCommand DeleteSelectedBoxCommand { get; }
 
@@ -117,15 +109,7 @@ public sealed class MainViewModel : ObservableObject
 
     public IAsyncRelayCommand CheckForUpdateCommand { get; }
 
-    public IAsyncRelayCommand AddTodoCommand { get; }
-
-    public IAsyncRelayCommand<TodoItemViewModel?> ToggleTodoCommand { get; }
-
-    public IAsyncRelayCommand<TodoItemViewModel?> DeleteTodoCommand { get; }
-
     public IRelayCommand ShowDashboardCommand { get; }
-
-    public IRelayCommand ShowTodoCommand { get; }
 
     public IRelayCommand ShowSettingsCommand { get; }
 
@@ -155,33 +139,11 @@ public sealed class MainViewModel : ObservableObject
         set => SetProperty(ref _isSettingsPage, value);
     }
 
-    public bool IsTodoPage
-    {
-        get => _isTodoPage;
-        set => SetProperty(ref _isTodoPage, value);
-    }
-
     public bool IsAboutPage
     {
         get => _isAboutPage;
         set => SetProperty(ref _isAboutPage, value);
     }
-
-    public string NewTodoTitle
-    {
-        get => _newTodoTitle;
-        set
-        {
-            if (SetProperty(ref _newTodoTitle, value))
-            {
-                AddTodoCommand.NotifyCanExecuteChanged();
-            }
-        }
-    }
-
-    public int TodoRemainingCount => TodoItems.Count(todo => !todo.IsCompleted);
-
-    public int TodoCompletedCount => TodoItems.Count(todo => todo.IsCompleted);
 
     public string StatusText
     {
@@ -259,7 +221,6 @@ public sealed class MainViewModel : ObservableObject
 
             LaunchOnStartup = ReadStartupRegistry();
             await RestoreLayoutPresetAsync();
-            await LoadTodosAsync();
 
             StatusText = $"{Boxes.Count} 个收纳盒已同步到桌面";
             BoxesChanged?.Invoke(this, EventArgs.Empty);
@@ -333,6 +294,7 @@ public sealed class MainViewModel : ObservableObject
                 BoxType.Normal => "普通收纳盒",
                 BoxType.Mapping => "映射收纳盒",
                 BoxType.Pixel => "像素收纳盒",
+                BoxType.Todo => "待办收纳盒",
                 _ => "收纳盒"
             };
             var name = $"{prefix} {Boxes.Count(box => box.Type == type) + 1}";
@@ -527,68 +489,6 @@ public sealed class MainViewModel : ObservableObject
             StatusText = result.StatusMessage;
             ItemsChanged?.Invoke(this, EventArgs.Empty);
         });
-    }
-
-    private async Task AddTodoAsync()
-    {
-        var title = NewTodoTitle;
-        await RunBusyAsync(async () =>
-        {
-            await _todoService.AddTodoAsync(title);
-            NewTodoTitle = string.Empty;
-            await LoadTodosAsync();
-            StatusText = "已添加待办事项";
-        });
-    }
-
-    private async Task ToggleTodoAsync(TodoItemViewModel? todo)
-    {
-        if (todo is null)
-        {
-            return;
-        }
-
-        await RunBusyAsync(async () =>
-        {
-            await _todoService.SetCompletedAsync(todo.Id, !todo.IsCompleted);
-            await LoadTodosAsync();
-            StatusText = todo.IsCompleted ? "已恢复待办事项" : "已完成待办事项";
-        });
-    }
-
-    private async Task DeleteTodoAsync(TodoItemViewModel? todo)
-    {
-        if (todo is null)
-        {
-            return;
-        }
-
-        await RunBusyAsync(async () =>
-        {
-            await _todoService.DeleteTodoAsync(todo.Id);
-            await LoadTodosAsync();
-            StatusText = "已删除待办事项";
-        });
-    }
-
-    private async Task LoadTodosAsync()
-    {
-        var todos = await _todoService.GetTodosAsync();
-        TodoItems.Clear();
-        foreach (var todo in todos)
-        {
-            TodoItems.Add(new TodoItemViewModel(todo));
-        }
-
-        OnPropertyChanged(nameof(TodoRemainingCount));
-        OnPropertyChanged(nameof(TodoCompletedCount));
-    }
-
-    private void SetPage(bool todo, bool settings, bool about)
-    {
-        IsTodoPage = todo;
-        IsSettingsPage = settings;
-        IsAboutPage = about;
     }
 
     private async Task ApplyThemeAsync(AppTheme theme)

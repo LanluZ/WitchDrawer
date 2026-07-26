@@ -140,7 +140,14 @@ public partial class DesktopBoxWindow : Window
     {
         AppThemeManager.ApplyToWindow(this);
         WindowMotion.PopIn(this, 0.97, 140);
-        ActiveItemsList.Focus();
+        if (ViewModel.IsTodoBox)
+        {
+            TodoTitleTextBox.Focus();
+        }
+        else
+        {
+            ActiveItemsList.Focus();
+        }
         QueueSendToBottom();
     }
 
@@ -175,6 +182,18 @@ public partial class DesktopBoxWindow : Window
     private void OnCloseClick(object sender, RoutedEventArgs e)
     {
         Close();
+    }
+
+    private async void OnTodoTitleKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter || !ViewModel.AddTodoCommand.CanExecute(null))
+        {
+            return;
+        }
+
+        e.Handled = true;
+        await ViewModel.AddTodoCommand.ExecuteAsync(null);
+        TodoTitleTextBox.Focus();
     }
 
     private async void OnUseMappingGridModeClick(object sender, RoutedEventArgs e)
@@ -282,6 +301,14 @@ public partial class DesktopBoxWindow : Window
 
     private void OnPreviewDragOver(object sender, DragEventArgs e)
     {
+        if (ViewModel.IsTodoBox)
+        {
+            ViewModel.IsDragOver = false;
+            e.Effects = DragDropEffects.None;
+            e.Handled = true;
+            return;
+        }
+
         var acceptsDrop = false;
         var showPreview = false;
         if (e.Data.GetDataPresent(InternalDrawerItemDragFormat))
@@ -334,6 +361,13 @@ public partial class DesktopBoxWindow : Window
 
     private async void OnFilesDropped(object sender, DragEventArgs e)
     {
+        if (ViewModel.IsTodoBox)
+        {
+            e.Effects = DragDropEffects.None;
+            e.Handled = true;
+            return;
+        }
+
         if (!e.Data.GetDataPresent(InternalDrawerItemDragFormat)
             && !e.Data.GetDataPresent(DataFormats.FileDrop))
         {

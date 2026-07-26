@@ -69,10 +69,14 @@ public partial class App : Application
                 logger,
                 quickPanelViewModel,
                 desktopBoxLayoutSettings,
-                todoService,
                 updateService);
             desktopBoxLayoutSettings.SetPresetChangedCallback(mainViewModel.SaveLayoutPresetAsync);
-            _desktopBoxManager = new DesktopBoxManager(drawerService, launcher, logger, desktopBoxLayoutSettings);
+            _desktopBoxManager = new DesktopBoxManager(
+                drawerService,
+                todoService,
+                launcher,
+                logger,
+                desktopBoxLayoutSettings);
             _mainWindow = new MainWindow(mainViewModel, quickPanel, logger);
             StartSingleInstanceServer(logger);
 

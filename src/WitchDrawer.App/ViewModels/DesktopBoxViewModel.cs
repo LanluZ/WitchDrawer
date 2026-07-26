@@ -18,6 +18,7 @@ public sealed class DesktopBoxViewModel : ObservableObject
     private const string MappingGridViewMode = "Grid";
 
     private readonly DrawerService _drawerService;
+    private readonly TodoService _todoService;
     private readonly IFileLauncher _launcher;
     private readonly IAppLogger _logger;
     private readonly DesktopBoxLayoutSettings _layoutSettings;
@@ -33,16 +34,19 @@ public sealed class DesktopBoxViewModel : ObservableObject
     private string _statusText = "拖入文件";
     private bool _isDragOver;
     private bool _isMappingListMode;
+    private string _newTodoTitle = string.Empty;
 
     public DesktopBoxViewModel(
         Box box,
         DrawerService drawerService,
+        TodoService todoService,
         IFileLauncher launcher,
         IAppLogger logger,
         DesktopBoxLayoutSettings? layoutSettings = null)
     {
         _box = box;
         _drawerService = drawerService;
+        _todoService = todoService;
         _launcher = launcher;
         _logger = logger;
         _layoutSettings = layoutSettings ?? new DesktopBoxLayoutSettings();
@@ -53,6 +57,9 @@ public sealed class DesktopBoxViewModel : ObservableObject
         RefreshCommand = new AsyncRelayCommand(LoadAsync);
         UseMappingGridModeCommand = new AsyncRelayCommand(() => SetMappingViewModeAsync(useListMode: false));
         UseMappingListModeCommand = new AsyncRelayCommand(() => SetMappingViewModeAsync(useListMode: true));
+        AddTodoCommand = new AsyncRelayCommand(AddTodoAsync, CanAddTodo);
+        ToggleTodoCommand = new AsyncRelayCommand<TodoItemViewModel?>(ToggleTodoAsync);
+        DeleteTodoCommand = new AsyncRelayCommand<TodoItemViewModel?>(DeleteTodoAsync);
         UpdateGridCanvasSize();
         _ = LoadMappingViewModeAsync();
     }
@@ -62,6 +69,8 @@ public sealed class DesktopBoxViewModel : ObservableObject
     public event EventHandler? ItemsChanged;
 
     public ObservableCollection<DrawerItemViewModel> Items { get; } = [];
+
+    public ObservableCollection<TodoItemViewModel> TodoItems { get; } = [];
 
     public IAsyncRelayCommand<DrawerItemViewModel?> OpenItemCommand { get; }
 
@@ -73,6 +82,12 @@ public sealed class DesktopBoxViewModel : ObservableObject
 
     public IAsyncRelayCommand UseMappingListModeCommand { get; }
 
+    public IAsyncRelayCommand AddTodoCommand { get; }
+
+    public IAsyncRelayCommand<TodoItemViewModel?> ToggleTodoCommand { get; }
+
+    public IAsyncRelayCommand<TodoItemViewModel?> DeleteTodoCommand { get; }
+
     public Guid BoxId => _box.Id;
 
     public string Name => _box.Name;
@@ -80,6 +95,8 @@ public sealed class DesktopBoxViewModel : ObservableObject
     public BoxType Type => _box.Type;
 
     public bool IsMappingBox => Type == BoxType.Mapping;
+
+    public bool IsTodoBox => Type == BoxType.Todo;
 
     public bool IsMappingListMode => IsMappingBox && _isMappingListMode;
 
@@ -90,6 +107,7 @@ public sealed class DesktopBoxViewModel : ObservableObject
         BoxType.Normal => "普通",
         BoxType.Mapping => "映射",
         BoxType.Pixel => "像素",
+        BoxType.Todo => "待办",
         _ => "未知"
     };
 
@@ -98,12 +116,29 @@ public sealed class DesktopBoxViewModel : ObservableObject
         BoxType.Normal => "移动收纳",
         BoxType.Mapping => "路径映射",
         BoxType.Pixel => "像素收纳",
+        BoxType.Todo => "桌面待办",
         _ => string.Empty
     };
 
-    public string ItemCountLabel => $"{Items.Count} 项";
+    public string ItemCountLabel => $"{(IsTodoBox ? TodoItems.Count : Items.Count)} 项";
 
     public bool IsEmpty => Items.Count == 0;
+
+    public bool ShowFileEmptyState => !IsTodoBox && IsEmpty;
+
+    public string NewTodoTitle
+    {
+        get => _newTodoTitle;
+        set
+        {
+            if (SetProperty(ref _newTodoTitle, value))
+            {
+                AddTodoCommand.NotifyCanExecuteChanged();
+            }
+        }
+    }
+
+    public int TodoRemainingCount => TodoItems.Count(todo => !todo.IsCompleted);
 
     public double GridCanvasWidth
     {
@@ -163,11 +198,14 @@ public sealed class DesktopBoxViewModel : ObservableObject
         OnPropertyChanged(nameof(Name));
         OnPropertyChanged(nameof(Type));
         OnPropertyChanged(nameof(IsMappingBox));
+        OnPropertyChanged(nameof(IsTodoBox));
         OnPropertyChanged(nameof(IsMappingListMode));
         OnPropertyChanged(nameof(IsGridMode));
         OnPropertyChanged(nameof(TypeLabel));
         OnPropertyChanged(nameof(Description));
         OnPropertyChanged(nameof(IsEmpty));
+        OnPropertyChanged(nameof(ShowFileEmptyState));
+        AddTodoCommand.NotifyCanExecuteChanged();
     }
 
     public (int Column, int Row) GetGridSlot(
@@ -268,6 +306,14 @@ public sealed class DesktopBoxViewModel : ObservableObject
     {
         try
         {
+            if (IsTodoBox)
+            {
+                Items.Clear();
+                await LoadTodoItemsAsync();
+                UpdateGridCanvasSize();
+                return;
+            }
+
             // Layout density is global (shared DesktopBoxLayoutSettings, controlled from
             // Settings). Boxes intentionally do NOT apply a per-box preset: every box shares
             // one settings instance, so re-applying each box's own preset on load made boxes
@@ -314,12 +360,99 @@ public sealed class DesktopBoxViewModel : ObservableObject
             UpdateGridCanvasSize();
             OnPropertyChanged(nameof(ItemCountLabel));
             OnPropertyChanged(nameof(IsEmpty));
+            OnPropertyChanged(nameof(ShowFileEmptyState));
         }
         catch (Exception exception)
         {
             _logger.Error(exception, "Failed to load desktop box.");
             StatusText = exception.Message;
         }
+    }
+
+    private bool CanAddTodo()
+    {
+        return IsTodoBox && !IsBusy && !string.IsNullOrWhiteSpace(NewTodoTitle);
+    }
+
+    private async Task AddTodoAsync()
+    {
+        var title = NewTodoTitle;
+        await RunTodoOperationAsync(async () =>
+        {
+            await _todoService.AddTodoAsync(BoxId, title);
+            NewTodoTitle = string.Empty;
+            StatusText = "已添加";
+        });
+    }
+
+    private async Task ToggleTodoAsync(TodoItemViewModel? todo)
+    {
+        if (todo is null || !IsTodoBox)
+        {
+            return;
+        }
+
+        await RunTodoOperationAsync(async () =>
+        {
+            await _todoService.SetCompletedAsync(todo.Id, !todo.IsCompleted);
+            StatusText = todo.IsCompleted ? "已恢复" : "已完成";
+        });
+    }
+
+    private async Task DeleteTodoAsync(TodoItemViewModel? todo)
+    {
+        if (todo is null || !IsTodoBox)
+        {
+            return;
+        }
+
+        await RunTodoOperationAsync(async () =>
+        {
+            await _todoService.DeleteTodoAsync(todo.Id);
+            StatusText = "已删除";
+        });
+    }
+
+    private async Task RunTodoOperationAsync(Func<Task> operation)
+    {
+        if (IsBusy)
+        {
+            return;
+        }
+
+        try
+        {
+            IsBusy = true;
+            AddTodoCommand.NotifyCanExecuteChanged();
+            await operation();
+            await LoadTodoItemsAsync();
+            ItemsChanged?.Invoke(this, EventArgs.Empty);
+        }
+        catch (Exception exception)
+        {
+            _logger.Error(exception, "Failed to update todo box.");
+            StatusText = exception.Message;
+        }
+        finally
+        {
+            IsBusy = false;
+            AddTodoCommand.NotifyCanExecuteChanged();
+        }
+    }
+
+    private async Task LoadTodoItemsAsync()
+    {
+        var todos = await _todoService.GetTodosAsync(BoxId);
+        TodoItems.Clear();
+        foreach (var todo in todos)
+        {
+            TodoItems.Add(new TodoItemViewModel(todo));
+        }
+
+        StatusText = TodoItems.Count == 0 ? "添加待办" : "已同步";
+        OnPropertyChanged(nameof(ItemCountLabel));
+        OnPropertyChanged(nameof(TodoRemainingCount));
+        OnPropertyChanged(nameof(ShowFileEmptyState));
     }
 
     public Task ImportPathsAsync(IEnumerable<string> paths)
@@ -661,4 +794,3 @@ public sealed class DesktopBoxViewModel : ObservableObject
         UpdateGridCanvasSize();
     }
 }
-
