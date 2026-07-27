@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -20,7 +21,12 @@ public partial class MainWindow : Window
 
     private readonly QuickPanelWindow _quickPanel;
     private readonly IAppLogger _logger;
+    private readonly QuickPanelHotKeySettingsStore _hotKeySettings;
+    private QuickPanelHotKey _quickPanelHotKey;
     private NativeHotKey? _hotKey;
+    private bool _isHotKeyRegistered;
+    private bool _isCapturingHotKey;
+    private bool _isApplyingHotKey;
     private HwndSource? _source;
     private Point? _boxDragStart;
     private BoxViewModel? _boxDragSource;
@@ -35,12 +41,20 @@ public partial class MainWindow : Window
     /// </summary>
     public event EventHandler<Guid>? ReopenBoxRequested;
 
-    public MainWindow(MainViewModel viewModel, QuickPanelWindow quickPanel, IAppLogger logger)
+    internal MainWindow(
+        MainViewModel viewModel,
+        QuickPanelWindow quickPanel,
+        IAppLogger logger,
+        QuickPanelHotKeySettingsStore hotKeySettings,
+        QuickPanelHotKey quickPanelHotKey)
     {
         DataContext = viewModel;
         _quickPanel = quickPanel;
         _logger = logger;
+        _hotKeySettings = hotKeySettings;
+        _quickPanelHotKey = quickPanelHotKey;
         InitializeComponent();
+        UpdateHotKeyUi("点击按钮可修改");
         Loaded += OnLoaded;
         AppThemeManager.ThemeChanged += OnThemeChanged;
     }
@@ -94,13 +108,13 @@ public partial class MainWindow : Window
             _source?.AddHook(WndProc);
 
             _hotKey = new NativeHotKey(handle, QuickPanelHotKeyId);
-            _hotKey.Register(
-                HotKeyModifiers.Control | HotKeyModifiers.Alt | HotKeyModifiers.NoRepeat,
-                (uint)KeyInterop.VirtualKeyFromKey(Key.W));
+            RegisterInitialHotKey();
         }
         catch (Exception exception)
         {
             _logger.Error(exception, "Failed to register quick panel hotkey.");
+            _isHotKeyRegistered = false;
+            UpdateHotKeyUi(GetHotKeyErrorText(exception));
         }
     }
 
@@ -124,6 +138,226 @@ public partial class MainWindow : Window
     private void OnThemeChanged(object? sender, AppTheme theme)
     {
         AppThemeManager.ApplyToWindow(this);
+    }
+
+    private void RegisterInitialHotKey()
+    {
+        if (_hotKey is null)
+        {
+            return;
+        }
+
+        try
+        {
+            _hotKey.Register(_quickPanelHotKey.RegistrationModifiers, _quickPanelHotKey.VirtualKey);
+            _isHotKeyRegistered = true;
+            UpdateHotKeyUi("已启用，点击按钮可修改");
+        }
+        catch (Exception exception)
+        {
+            _isHotKeyRegistered = false;
+            _logger.Error(exception, "Failed to register configured quick panel hotkey.");
+            UpdateHotKeyUi(GetHotKeyErrorText(exception));
+        }
+    }
+
+    private void OnQuickPanelHotKeyButtonClick(object sender, RoutedEventArgs e)
+    {
+        if (_isApplyingHotKey)
+        {
+            return;
+        }
+
+        _isCapturingHotKey = true;
+        QuickPanelHotKeyButton.Content = "请按新快捷键…";
+        QuickPanelHotKeyStatusText.Text = "需包含 Ctrl、Alt 或 Win；Esc 取消";
+        QuickPanelHotKeyButton.Focus();
+        Keyboard.Focus(QuickPanelHotKeyButton);
+    }
+
+    private async void OnQuickPanelHotKeyPreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (!_isCapturingHotKey)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        if (key == Key.Escape)
+        {
+            CancelHotKeyCapture("已取消修改");
+            return;
+        }
+
+        if (IsModifierKey(key))
+        {
+            QuickPanelHotKeyStatusText.Text = "继续按下一个非修饰键";
+            return;
+        }
+
+        var modifiers = GetHotKeyModifiers(Keyboard.Modifiers);
+        if ((modifiers & (HotKeyModifiers.Control | HotKeyModifiers.Alt | HotKeyModifiers.Win)) == 0)
+        {
+            QuickPanelHotKeyStatusText.Text = "请至少按住 Ctrl、Alt 或 Win";
+            return;
+        }
+
+        var virtualKey = (uint)KeyInterop.VirtualKeyFromKey(key);
+        var candidate = new QuickPanelHotKey(modifiers, virtualKey);
+        if (!candidate.IsValid)
+        {
+            QuickPanelHotKeyStatusText.Text = "这个按键不能用作全局快捷键";
+            return;
+        }
+
+        _isCapturingHotKey = false;
+        _isApplyingHotKey = true;
+        QuickPanelHotKeyButton.IsEnabled = false;
+        try
+        {
+            await ApplyQuickPanelHotKeyAsync(candidate);
+        }
+        finally
+        {
+            _isApplyingHotKey = false;
+            QuickPanelHotKeyButton.IsEnabled = true;
+        }
+    }
+
+    private void OnQuickPanelHotKeyLostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+    {
+        if (_isCapturingHotKey)
+        {
+            CancelHotKeyCapture("已取消修改");
+        }
+    }
+
+    private async Task ApplyQuickPanelHotKeyAsync(QuickPanelHotKey candidate)
+    {
+        if (_hotKey is null)
+        {
+            UpdateHotKeyUi("快捷键组件尚未初始化");
+            return;
+        }
+
+        if (candidate == _quickPanelHotKey && _isHotKeyRegistered)
+        {
+            UpdateHotKeyUi("快捷键未更改");
+            return;
+        }
+
+        var previous = _quickPanelHotKey;
+        var previousWasRegistered = _isHotKeyRegistered;
+        try
+        {
+            _hotKey.Register(candidate.RegistrationModifiers, candidate.VirtualKey);
+            _isHotKeyRegistered = true;
+        }
+        catch (Exception exception)
+        {
+            _logger.Error(exception, "Failed to register the requested quick panel hotkey.");
+            RestorePreviousHotKey(previous, previousWasRegistered);
+            UpdateHotKeyUi(GetHotKeyErrorText(exception));
+            return;
+        }
+
+        try
+        {
+            await _hotKeySettings.SaveAsync(candidate);
+            _quickPanelHotKey = candidate;
+            UpdateHotKeyUi("已保存并立即生效");
+        }
+        catch (Exception exception)
+        {
+            _logger.Error(exception, "Failed to save quick panel hotkey.");
+            RestorePreviousHotKey(previous, previousWasRegistered);
+            UpdateHotKeyUi("保存失败，已恢复原快捷键");
+        }
+    }
+
+    private void RestorePreviousHotKey(QuickPanelHotKey previous, bool previousWasRegistered)
+    {
+        if (_hotKey is null)
+        {
+            _isHotKeyRegistered = false;
+            return;
+        }
+
+        if (!previousWasRegistered)
+        {
+            _hotKey.Unregister();
+            _isHotKeyRegistered = false;
+            return;
+        }
+
+        try
+        {
+            _hotKey.Register(previous.RegistrationModifiers, previous.VirtualKey);
+            _isHotKeyRegistered = true;
+        }
+        catch (Exception restoreException)
+        {
+            _isHotKeyRegistered = false;
+            _logger.Error(restoreException, "Failed to restore previous quick panel hotkey.");
+        }
+    }
+
+    private void CancelHotKeyCapture(string statusText)
+    {
+        _isCapturingHotKey = false;
+        UpdateHotKeyUi(statusText);
+    }
+
+    private void UpdateHotKeyUi(string statusText)
+    {
+        QuickPanelHotKeyButton.Content = _quickPanelHotKey.DisplayText;
+        QuickPanelHotKeyStatusText.Text = statusText;
+    }
+
+    private static HotKeyModifiers GetHotKeyModifiers(ModifierKeys modifiers)
+    {
+        var result = HotKeyModifiers.None;
+        if (modifiers.HasFlag(ModifierKeys.Control))
+        {
+            result |= HotKeyModifiers.Control;
+        }
+
+        if (modifiers.HasFlag(ModifierKeys.Alt))
+        {
+            result |= HotKeyModifiers.Alt;
+        }
+
+        if (modifiers.HasFlag(ModifierKeys.Shift))
+        {
+            result |= HotKeyModifiers.Shift;
+        }
+
+        if (modifiers.HasFlag(ModifierKeys.Windows))
+        {
+            result |= HotKeyModifiers.Win;
+        }
+
+        return result;
+    }
+
+    private static bool IsModifierKey(Key key)
+    {
+        return key is Key.LeftCtrl
+            or Key.RightCtrl
+            or Key.LeftAlt
+            or Key.RightAlt
+            or Key.LeftShift
+            or Key.RightShift
+            or Key.LWin
+            or Key.RWin;
+    }
+
+    private static string GetHotKeyErrorText(Exception exception)
+    {
+        return exception is Win32Exception { NativeErrorCode: 1409 }
+            ? "快捷键已被其他程序占用，请换一个组合"
+            : "快捷键注册失败，请换一个组合重试";
     }
 
     private void OnShellHeaderMouseLeftButtonDown(object sender, MouseButtonEventArgs e)

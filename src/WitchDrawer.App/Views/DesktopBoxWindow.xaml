@@ -13,6 +13,7 @@
         AllowDrop="True"
         Background="Transparent"
         Focusable="True"
+        PreviewMouseDown="OnWindowPreviewMouseDown"
         PreviewKeyDown="OnPreviewKeyDown"
         PreviewDrop="OnFilesDropped"
         Drop="OnFilesDropped"

@@ -53,6 +53,8 @@ public partial class App : Application
             var launcher = new ShellFileLauncher();
             var todoService = new TodoService(repository);
             var updateService = new UpdateService(logger);
+            var quickPanelHotKeySettings = new QuickPanelHotKeySettingsStore(drawerService);
+            var quickPanelHotKey = await quickPanelHotKeySettings.LoadAsync();
 
             logger.Info("Data directory: " + paths.RootDirectory);
             logger.Info("Database path: " + paths.DatabasePath);
@@ -74,7 +76,12 @@ public partial class App : Application
                 todoService,
                 launcher,
                 logger);
-            _mainWindow = new MainWindow(mainViewModel, quickPanel, logger);
+            _mainWindow = new MainWindow(
+                mainViewModel,
+                quickPanel,
+                logger,
+                quickPanelHotKeySettings,
+                quickPanelHotKey);
             StartSingleInstanceServer(logger);
 
             mainViewModel.BoxesChanged += async (_, _) => await _desktopBoxManager.RefreshAsync();

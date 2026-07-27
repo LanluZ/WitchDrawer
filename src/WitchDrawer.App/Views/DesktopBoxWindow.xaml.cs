@@ -28,6 +28,7 @@ public partial class DesktopBoxWindow : Window
     private bool _forceClose;
     private Point? _dragStartPoint;
     private DrawerItemViewModel? _dragStartItem;
+    private readonly DragOperationGate _itemDragGate = new();
     private DrawerItemViewModel? _keyboardDeleteTarget;
     private Func<Guid, Task>? _positionChangedCallback;
     private bool _isMappingViewTransitioning;
@@ -110,6 +111,8 @@ public partial class DesktopBoxWindow : Window
         if (!_forceClose)
         {
             e.Cancel = true;
+            ResetDragVisualState();
+            ClearPendingIconDrag();
             Hide();
             return;
         }
@@ -140,6 +143,8 @@ public partial class DesktopBoxWindow : Window
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
+        ResetDragVisualState();
+        ClearPendingIconDrag();
         ApplyThemeAppearance();
         WindowMotion.PopIn(this, 0.97, 140);
         if (ViewModel.IsTodoBox)
@@ -177,12 +182,14 @@ public partial class DesktopBoxWindow : Window
     private void OnWindowDeactivated(object? sender, EventArgs e)
     {
         ClearItemSelection();
+        ResetDragVisualState();
         QueueSendToBottom();
     }
 
     private void OnApplicationDeactivated(object? sender, EventArgs e)
     {
         ClearItemSelection();
+        ResetDragVisualState();
     }
 
     private void ClearItemSelection()
@@ -190,6 +197,17 @@ public partial class DesktopBoxWindow : Window
         IconList.SelectedItem = null;
         FileList.SelectedItem = null;
         _keyboardDeleteTarget = null;
+    }
+
+    private void OnWindowPreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        // A cancelled external OLE drag can occasionally omit the final DragLeave.
+        // A subsequent real click proves that no drag is active, so remove any stale
+        // target chrome before routing the click to the item or title bar.
+        if (!_itemDragGate.IsEntered)
+        {
+            ResetAllDragVisualStates();
+        }
     }
 
     private void OnCloseClick(object sender, RoutedEventArgs e)
@@ -360,16 +378,11 @@ public partial class DesktopBoxWindow : Window
 
     private void OnPreviewDragLeave(object sender, DragEventArgs e)
     {
-        var itemList = ActiveItemsList;
-        var point = e.GetPosition(itemList);
-        if (point.X < 0
-            || point.Y < 0
-            || point.X > itemList.ActualWidth
-            || point.Y > itemList.ActualHeight)
-        {
-            ViewModel.HideDragPreview();
-            ViewModel.IsDragOver = false;
-        }
+        // DragLeave is also raised when a drag is cancelled while the pointer is still
+        // inside the list. Coordinate checks therefore leave IsDragOver stuck true.
+        // If the pointer only crossed a child boundary, the next DragOver immediately
+        // restores the preview.
+        ResetDragVisualState();
     }
 
     private async void OnFilesDropped(object sender, DragEventArgs e)
@@ -378,6 +391,7 @@ public partial class DesktopBoxWindow : Window
         {
             e.Effects = DragDropEffects.None;
             e.Handled = true;
+            ResetDragVisualState();
             return;
         }
 
@@ -438,8 +452,7 @@ public partial class DesktopBoxWindow : Window
         }
         finally
         {
-            ViewModel.HideDragPreview();
-            ViewModel.IsDragOver = false;
+            ResetDragVisualState();
             ResetDragCursor();
         }
     }
@@ -500,6 +513,12 @@ public partial class DesktopBoxWindow : Window
 
     private void OnIconPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
+        if (_itemDragGate.IsEntered)
+        {
+            e.Handled = true;
+            return;
+        }
+
         BeginIconDrag(e, sender as ListBox ?? ActiveItemsList);
     }
 
@@ -527,8 +546,23 @@ public partial class DesktopBoxWindow : Window
         }
 
         var drawerItem = _dragStartItem;
-        await RunItemDragAsync(drawerItem, itemList);
+        // DoDragDrop runs a nested OLE message loop. Clear the pending gesture and close
+        // the gate before entering it so re-entrant MouseMove events cannot start a
+        // second nested drag operation.
         ClearPendingIconDrag();
+        if (!_itemDragGate.TryEnter())
+        {
+            return;
+        }
+
+        try
+        {
+            await RunItemDragAsync(drawerItem, itemList);
+        }
+        finally
+        {
+            _itemDragGate.Exit();
+        }
     }
 
     private (int Column, int Row) GetDropSlot(DragEventArgs e, DesktopBoxDragPayload? payload = null)
@@ -692,10 +726,33 @@ public partial class DesktopBoxWindow : Window
             dragSourceList.QueryContinueDrag -= queryContinueDrag;
             dragSourceList.GiveFeedback -= giveFeedback;
             drawerItem.IsDragSource = false;
-            ViewModel.HideDragPreview();
+            ResetAllDragVisualStates();
             ResetDragCursor();
+            if (Mouse.Captured is not null)
+            {
+                Mouse.Capture(null);
+            }
             dragSourceList.Focus();
             QueueSendToBottom();
+        }
+    }
+
+    private void ResetDragVisualState()
+    {
+        ViewModel.HideDragPreview();
+        ViewModel.IsDragOver = false;
+    }
+
+    private static void ResetAllDragVisualStates()
+    {
+        if (Application.Current is null)
+        {
+            return;
+        }
+
+        foreach (var window in Application.Current.Windows.OfType<DesktopBoxWindow>())
+        {
+            window.ResetDragVisualState();
         }
     }
 

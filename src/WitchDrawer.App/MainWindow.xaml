@@ -1410,18 +1410,31 @@
                                                    FontSize="12"
                                                    Foreground="{DynamicResource TextMutedBrush}" />
                                     </StackPanel>
-                                    <Border Grid.Column="1" 
-                                            Background="{DynamicResource AccentSoftBrush}" 
-                                            BorderBrush="{DynamicResource BorderBrushSoft}" 
-                                            BorderThickness="1" 
-                                            CornerRadius="9"
-                                            Padding="10,4"
-                                            VerticalAlignment="Center">
-                                        <TextBlock Text="Ctrl + Alt + W" 
-                                                   Foreground="{DynamicResource AccentBrush}" 
-                                                   FontWeight="Bold" 
-                                                   FontSize="12" />
-                                    </Border>
+                                    <StackPanel Grid.Column="1"
+                                                Margin="12,0,0,0"
+                                                VerticalAlignment="Center"
+                                                HorizontalAlignment="Right">
+                                        <Button x:Name="QuickPanelHotKeyButton"
+                                                MinWidth="128"
+                                                Height="30"
+                                                Padding="12,2"
+                                                FontSize="12"
+                                                FontWeight="Bold"
+                                                Foreground="{DynamicResource AccentBrush}"
+                                                Background="{DynamicResource AccentSoftBrush}"
+                                                BorderBrush="{DynamicResource BorderBrushSoft}"
+                                                Click="OnQuickPanelHotKeyButtonClick"
+                                                PreviewKeyDown="OnQuickPanelHotKeyPreviewKeyDown"
+                                                LostKeyboardFocus="OnQuickPanelHotKeyLostKeyboardFocus"
+                                                ToolTip="点击后按下新的快捷键组合" />
+                                        <TextBlock x:Name="QuickPanelHotKeyStatusText"
+                                                   Margin="0,4,0,0"
+                                                   MaxWidth="210"
+                                                   TextAlignment="Right"
+                                                   TextWrapping="Wrap"
+                                                   FontSize="10.5"
+                                                   Foreground="{DynamicResource TextMutedBrush}" />
+                                    </StackPanel>
                                 </Grid>
                                 </Border>
 
