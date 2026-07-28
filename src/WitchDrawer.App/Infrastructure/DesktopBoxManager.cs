@@ -7,6 +7,7 @@ using WitchDrawer.App.Views;
 using WitchDrawer.Core.Abstractions;
 using WitchDrawer.Core.Logging;
 using WitchDrawer.Core.Services;
+using WitchDrawer.Native.Windows;
 
 namespace WitchDrawer.App.Infrastructure;
 
@@ -20,7 +21,10 @@ public sealed class DesktopBoxManager
     private readonly IFileLauncher _launcher;
     private readonly IAppLogger _logger;
     private readonly Dictionary<Guid, DesktopBoxWindow> _windows = [];
+    private readonly ForegroundWindowMonitor _foregroundWindowMonitor;
     private bool _closing;
+    private bool _desktopIsForeground;
+    private CancellationTokenSource? _foregroundChangeCts;
     private GuideLineWindow? _verticalGuide;
     private GuideLineWindow? _horizontalGuide;
     private bool _isAdjustingPosition;
@@ -35,6 +39,15 @@ public sealed class DesktopBoxManager
         _todoService = todoService;
         _launcher = launcher;
         _logger = logger;
+        _foregroundWindowMonitor = new ForegroundWindowMonitor();
+        _foregroundWindowMonitor.ForegroundWindowChanged += OnForegroundWindowChanged;
+        _desktopIsForeground = ForegroundWindowMonitor.IsDesktopWindow(
+            ForegroundWindowMonitor.GetCurrentForegroundWindow());
+        if (!_foregroundWindowMonitor.IsActive)
+        {
+            _logger.Info("Foreground window monitoring is unavailable; Show Desktop layering may be limited.");
+        }
+
         WeakReferenceMessenger.Default.Register<DesktopBoxManager, BoxLayoutPresetChangedMessage>(
             this,
             static (recipient, message) => recipient.ApplyBoxLayoutPreset(message));
@@ -124,6 +137,7 @@ public sealed class DesktopBoxManager
                     });
 
                     window.Show();
+                    window.SetDesktopForeground(_desktopIsForeground);
                     window.QueueSendToBottom();
                 }
                 else
@@ -132,6 +146,7 @@ public sealed class DesktopBoxManager
                 }
 
                 await window.ViewModel.LoadAsync();
+                window.SetDesktopForeground(_desktopIsForeground);
                 window.QueueSendToBottom();
             }
         }
@@ -177,6 +192,48 @@ public sealed class DesktopBoxManager
             var key = BoxPositionSettingPrefix + boxId.ToString("N");
             var value = $"{window.Left}{PositionSeparator}{window.Top}";
             await _drawerService.SetSettingAsync(key, value);
+        }
+    }
+
+    /// <summary>
+    /// Reattaches desktop boxes after Explorer recreates the Shell desktop.
+    /// If Explorer destroyed an owned HWND, remove the stale WPF window and let
+    /// the normal refresh path recreate it from persisted box data.
+    /// </summary>
+    public async Task RecoverDesktopHostsAsync()
+    {
+        if (_closing)
+        {
+            return;
+        }
+
+        // TaskbarCreated is broadcast as Explorer comes back. Give Progman a
+        // short window to finish creating before resolving the new owner HWND.
+        await Task.Delay(350);
+        if (_closing)
+        {
+            return;
+        }
+
+        var recreateRequired = false;
+        foreach (var (boxId, window) in _windows.ToArray())
+        {
+            if (window.IsNativeWindowAlive)
+            {
+                window.RefreshDesktopHost();
+                window.QueueSendToBottom();
+                continue;
+            }
+
+            window.LocationChanged -= OnWindowLocationChanged;
+            window.PreviewMouseLeftButtonUp -= OnWindowMouseUp;
+            _windows.Remove(boxId);
+            recreateRequired = true;
+        }
+
+        if (recreateRequired)
+        {
+            await RefreshAsync();
         }
     }
 
@@ -230,12 +287,114 @@ public sealed class DesktopBoxManager
         }
 
         _windows.Clear();
+        var foregroundChangeCts = Interlocked.Exchange(ref _foregroundChangeCts, null);
+        foregroundChangeCts?.Cancel();
+        foregroundChangeCts?.Dispose();
+        _foregroundWindowMonitor.ForegroundWindowChanged -= OnForegroundWindowChanged;
+        _foregroundWindowMonitor.Dispose();
 
         _verticalGuide?.Close();
         _verticalGuide = null;
         _horizontalGuide?.Close();
         _horizontalGuide = null;
         WeakReferenceMessenger.Default.UnregisterAll(this);
+    }
+
+    private void OnForegroundWindowChanged(nint windowHandle)
+    {
+        if (_closing)
+        {
+            return;
+        }
+
+        // Win+D emits a short burst of foreground changes (for example Progman,
+        // WorkerW and transient shell windows). Applying every intermediate handle
+        // moves all boxes up and down several times and produces a visible flash.
+        var next = new CancellationTokenSource();
+        var previous = Interlocked.Exchange(ref _foregroundChangeCts, next);
+        previous?.Cancel();
+        previous?.Dispose();
+        _ = ApplyForegroundWindowAfterSettlingAsync(next);
+    }
+
+    private async Task ApplyForegroundWindowAfterSettlingAsync(CancellationTokenSource changeCts)
+    {
+        var cancellationToken = changeCts.Token;
+        try
+        {
+            await Task.Delay(80, cancellationToken).ConfigureAwait(false);
+            if (cancellationToken.IsCancellationRequested || Volatile.Read(ref _closing))
+            {
+                return;
+            }
+
+            var windowHandle = ForegroundWindowMonitor.GetCurrentForegroundWindow();
+            var dispatcher = Application.Current?.Dispatcher;
+            if (dispatcher is null || dispatcher.HasShutdownStarted)
+            {
+                return;
+            }
+
+            await dispatcher.InvokeAsync(
+                () =>
+                {
+                    if (!cancellationToken.IsCancellationRequested)
+                    {
+                        ApplyForegroundWindow(windowHandle);
+                    }
+                },
+                System.Windows.Threading.DispatcherPriority.Background,
+                cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            if (ReferenceEquals(
+                    Interlocked.CompareExchange(ref _foregroundChangeCts, null, changeCts),
+                    changeCts))
+            {
+                changeCts.Dispose();
+            }
+        }
+    }
+
+    private void ApplyForegroundWindow(nint windowHandle)
+    {
+        if (_closing || windowHandle == nint.Zero)
+        {
+            return;
+        }
+
+        if (ForegroundWindowMonitor.IsDesktopWindow(windowHandle))
+        {
+            SetDesktopForeground(true);
+            return;
+        }
+
+        // Clicking a desktop box should not make it disappear while Show Desktop
+        // is active. Any other foreground window ends the temporary topmost mode.
+        if (_windows.Values.Any(window => window.NativeHandle == windowHandle))
+        {
+            return;
+        }
+
+        SetDesktopForeground(false);
+    }
+
+    private void SetDesktopForeground(bool isForeground)
+    {
+        if (_desktopIsForeground == isForeground)
+        {
+            return;
+        }
+
+        _desktopIsForeground = isForeground;
+        foreach (var window in _windows.Values)
+        {
+            window.SetDesktopForeground(isForeground);
+        }
     }
 
     private void ApplyBoxLayoutPreset(BoxLayoutPresetChangedMessage message)

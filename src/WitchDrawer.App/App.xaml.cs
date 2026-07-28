@@ -97,6 +97,8 @@ public partial class App : Application
                 await mainViewModel.ReloadItemsFromDesktopAsync();
             };
             _mainWindow.ReopenBoxRequested += async (_, boxId) => await _desktopBoxManager.ShowAsync(boxId);
+            _mainWindow.DesktopShellRestarted += async (_, _) =>
+                await _desktopBoxManager.RecoverDesktopHostsAsync();
             _mainWindow.Closed += async (_, _) => await _desktopBoxManager.CloseAllAsync();
 
             mainViewModel.UpdateRequested += async (_, result) =>

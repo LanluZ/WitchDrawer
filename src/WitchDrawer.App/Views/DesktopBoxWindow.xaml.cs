@@ -1,6 +1,5 @@
 using System.ComponentModel;
 using System.IO;
-using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -10,6 +9,7 @@ using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using WitchDrawer.App.Infrastructure;
 using WitchDrawer.App.ViewModels;
+using WitchDrawer.Native.Windows;
 
 namespace WitchDrawer.App.Views;
 
@@ -17,13 +17,6 @@ public partial class DesktopBoxWindow : Window
 {
     private const string InternalDrawerItemDragFormat = "WitchDrawer.DesktopBoxItem";
 
-    private const uint SwpNoActivate = 0x0010;
-    private const uint SwpNoMove = 0x0002;
-    private const uint SwpNoSize = 0x0001;
-    private static readonly IntPtr HwndBottom = new IntPtr(1);
-
-    [DllImport("user32.dll")]
-    private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
     private static readonly HashSet<Guid> CompletedInternalDragIds = [];
     private static readonly HashSet<Guid> CompletedInternalItemIds = [];
     private bool _forceClose;
@@ -33,6 +26,10 @@ public partial class DesktopBoxWindow : Window
     private DrawerItemViewModel? _keyboardDeleteTarget;
     private Func<Guid, Task>? _positionChangedCallback;
     private bool _isMappingViewTransitioning;
+    private bool _restoreAfterMinimizeQueued;
+    private bool _desktopIsForeground;
+    private HwndSource? _source;
+    private DesktopToolWindow? _nativeWindow;
 
     private sealed class DesktopBoxDragPayload(Guid dragId, Guid itemId, Guid sourceBoxId)
     {
@@ -70,6 +67,7 @@ public partial class DesktopBoxWindow : Window
         AppThemeManager.CrystalBoxTransparencyChanged += OnCrystalBoxTransparencyChanged;
         Activated += OnWindowActivated;
         Deactivated += OnWindowDeactivated;
+        StateChanged += OnWindowStateChanged;
         // Desktop boxes often stay non-activated (ShowActivated=false + HWND_BOTTOM/NOACTIVATE).
         // Window.Deactivated therefore never runs after an external drop selection; clear when
         // the whole app loses foreground so a desktop click removes the selected-item chrome.
@@ -80,19 +78,43 @@ public partial class DesktopBoxWindow : Window
 
     private void SendToBottom()
     {
-        var helper = new WindowInteropHelper(this);
-        if (helper.Handle == IntPtr.Zero)
+        if (_desktopIsForeground)
         {
-            return;
+            _nativeWindow?.BringAboveDesktop();
         }
-
-        SetWindowPos(helper.Handle, HwndBottom, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpNoActivate);
+        else
+        {
+            _nativeWindow?.SendToBottom();
+        }
     }
 
     public void QueueSendToBottom()
     {
         SendToBottom();
         Dispatcher.BeginInvoke(new Action(SendToBottom), DispatcherPriority.ApplicationIdle);
+    }
+
+    public nint NativeHandle => _nativeWindow?.Handle ?? nint.Zero;
+
+    public bool IsNativeWindowAlive => _nativeWindow?.IsAlive == true;
+
+    public bool RefreshDesktopHost()
+    {
+        return _nativeWindow?.TryAttachToDesktop() == true;
+    }
+
+    public void SetDesktopForeground(bool isForeground)
+    {
+        if (_desktopIsForeground == isForeground)
+        {
+            return;
+        }
+
+        _desktopIsForeground = isForeground;
+        // Foreground monitoring is already coalesced by DesktopBoxManager.
+        // Apply the resulting layer once; a second idle-time SetWindowPos is
+        // visible as a flash during the Win+D compositor transition.
+        SendToBottom();
     }
 
     private ListBox ActiveItemsList => ViewModel.IsMappingListMode ? FileList : IconList;
@@ -131,6 +153,10 @@ public partial class DesktopBoxWindow : Window
         AppThemeManager.CrystalBoxTransparencyChanged -= OnCrystalBoxTransparencyChanged;
         Activated -= OnWindowActivated;
         Deactivated -= OnWindowDeactivated;
+        StateChanged -= OnWindowStateChanged;
+        _source?.RemoveHook(WindowMessageHook);
+        _source = null;
+        _nativeWindow = null;
         if (Application.Current is not null)
         {
             Application.Current.Deactivated -= OnApplicationDeactivated;
@@ -141,7 +167,65 @@ public partial class DesktopBoxWindow : Window
 
     private void OnSourceInitialized(object? sender, EventArgs e)
     {
+        var handle = new WindowInteropHelper(this).Handle;
+        _nativeWindow = new DesktopToolWindow(handle);
+        _nativeWindow.Configure();
+        _source = HwndSource.FromHwnd(handle);
+        _source?.AddHook(WindowMessageHook);
         QueueSendToBottom();
+    }
+
+    private nint WindowMessageHook(
+        nint windowHandle,
+        int message,
+        nint wordParameter,
+        nint longParameter,
+        ref bool handled)
+    {
+        if (DesktopToolWindow.IsMinimizeSystemCommand(message, wordParameter))
+        {
+            // Win+D / Show Desktop normally minimizes top-level windows. A desktop
+            // box is desktop furniture, so consume the minimize command.
+            handled = true;
+        }
+
+        return nint.Zero;
+    }
+
+    private void OnWindowStateChanged(object? sender, EventArgs e)
+    {
+        if (_forceClose
+            || WindowState != WindowState.Minimized
+            || _restoreAfterMinimizeQueued)
+        {
+            return;
+        }
+
+        // Some shell versions minimize via ShowWindow instead of WM_SYSCOMMAND.
+        // Restore after the shell's burst of Z-order changes has settled.
+        _restoreAfterMinimizeQueued = true;
+        _ = RestoreAfterShellMinimizeAsync();
+    }
+
+    private async Task RestoreAfterShellMinimizeAsync()
+    {
+        await Task.Delay(120).ConfigureAwait(false);
+        if (Dispatcher.HasShutdownStarted)
+        {
+            return;
+        }
+
+        await Dispatcher.InvokeAsync(() =>
+        {
+            _restoreAfterMinimizeQueued = false;
+            if (!_forceClose && WindowState == WindowState.Minimized)
+            {
+                _nativeWindow?.RestoreWithoutActivation();
+                // RestoreWithoutActivation no longer changes Z order. Apply exactly
+                // one layer operation based on the stabilized desktop state.
+                SendToBottom();
+            }
+        });
     }
 
     private void OnLoaded(object sender, RoutedEventArgs e)

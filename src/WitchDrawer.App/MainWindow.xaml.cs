@@ -10,6 +10,7 @@ using WitchDrawer.App.ViewModels;
 using WitchDrawer.App.Views;
 using WitchDrawer.Core.Logging;
 using WitchDrawer.Native.HotKeys;
+using WitchDrawer.Native.Windows;
 
 namespace WitchDrawer.App;
 
@@ -35,6 +36,7 @@ public partial class MainWindow : Window
 
     public event EventHandler? WindowHidden;
     public event EventHandler? WindowClosing;
+    public event EventHandler? DesktopShellRestarted;
 
     /// <summary>
     /// Raised when the user asks to reopen a desktop box window (e.g. by
@@ -394,6 +396,12 @@ public partial class MainWindow : Window
 
     private nint WndProc(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
     {
+        if (message == DesktopToolWindow.TaskbarCreatedMessage)
+        {
+            _ = Dispatcher.BeginInvoke(
+                new Action(() => DesktopShellRestarted?.Invoke(this, EventArgs.Empty)));
+        }
+
         if (message == WmHotKey && wParam.ToInt32() == QuickPanelHotKeyId)
         {
             handled = true;
