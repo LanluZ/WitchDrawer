@@ -5,8 +5,8 @@
 //!
 //! ```text
 //! fn initialize(&self) -> AppResult<()>
-//! fn get_boxes(&self) -> AppResult<Vec<Box>>
-//! fn get_box(&self, id: Uuid) -> AppResult<Option<Box>>
+//! fn get_boxes(&self) -> AppResult<Vec<DrawerBox>>
+//! fn get_box(&self, id: Uuid) -> AppResult<Option<DrawerBox>>
 //! fn add_box(&self, b: &Box) -> AppResult<()>
 //! fn update_box_sort_orders(&self, ids: &[Uuid]) -> AppResult<()>
 //! fn update_box_name(&self, id: Uuid, name: &str) -> AppResult<()>
@@ -35,7 +35,7 @@ use chrono::Utc;
 use uuid::Uuid;
 
 use crate::models::{
-    AppError, AppResult, Box as BoxModel, BoxDeleteResult, BoxType, DrawerItem,
+    AppError, AppResult, DrawerBox, BoxDeleteResult, BoxType, DrawerItem,
     ItemDeleteResult, ItemKind,
 };
 use crate::storage::DrawerRepository;
@@ -82,11 +82,11 @@ impl DrawerService {
 
     // -- Boxes --------------------------------------------------------------
 
-    pub fn get_boxes(&self) -> AppResult<Vec<BoxModel>> {
+    pub fn get_boxes(&self) -> AppResult<Vec<DrawerBox>> {
         self.repository.get_boxes()
     }
 
-    pub fn create_box(&self, name: &str, box_type: BoxType) -> AppResult<BoxModel> {
+    pub fn create_box(&self, name: &str, box_type: BoxType) -> AppResult<DrawerBox> {
         let trimmed = name.trim();
         if trimmed.is_empty() {
             return Err(AppError::invalid_arg("Box name cannot be empty."));
@@ -108,7 +108,7 @@ impl DrawerService {
 
         let sort_order = self.repository.get_next_box_sort_order()?;
 
-        let b = BoxModel {
+        let b = DrawerBox {
             id,
             name: trimmed.to_string(),
             box_type,
@@ -938,7 +938,7 @@ impl DrawerService {
     }
 
     /// Best-effort: delete the box storage directory if it is empty.
-    fn try_delete_box_storage_directory(&self, b: &BoxModel) {
+    fn try_delete_box_storage_directory(&self, b: &DrawerBox) {
         let storage = b
             .storage_path
             .as_ref()

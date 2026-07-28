@@ -5,7 +5,7 @@ edition = "2021"
 
 [lib]
 name = "witchdrawer_core"
-crate-type = ["cdylib", "staticlib"]
+crate-type = ["cdylib", "staticlib", "lib"]
 
 [dependencies]
 rusqlite = { version = "0.31", features = ["bundled"] }

@@ -6,7 +6,7 @@ use super::BoxType;
 
 /// 对应 C# Box record
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Box {
+pub struct DrawerBox {
     pub id: Uuid,
     pub name: String,
     pub box_type: BoxType,
@@ -30,8 +30,8 @@ pub struct FfiBox {
     pub updated_at: String,
 }
 
-impl From<&Box> for FfiBox {
-    fn from(b: &Box) -> Self {
+impl From<&DrawerBox> for FfiBox {
+    fn from(b: &DrawerBox) -> Self {
         Self {
             id: b.id.to_string(),
             name: b.name.clone(),

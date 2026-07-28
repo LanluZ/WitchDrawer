@@ -12,7 +12,7 @@ use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, OpenFlags};
 use uuid::Uuid;
 
-use crate::models::{AppError, AppResult, Box, BoxType, DrawerItem, ItemKind, TodoItem};
+use crate::models::{AppError, AppResult, DrawerBox, BoxType, DrawerItem, ItemKind, TodoItem};
 
 // ── datetime helpers ────────────────────────────────────────
 
@@ -36,9 +36,9 @@ fn parse_uuid(s: &str) -> Result<Uuid, rusqlite::Error> {
 
 // ── row readers ────────────────────────────────────────────
 
-/// Read a `Box` from a row with columns:
+/// Read a `DrawerBox` from a row with columns:
 /// Id, Name, Type, StoragePath, SortOrder, CreatedAt, UpdatedAt
-fn read_box(row: &rusqlite::Row) -> rusqlite::Result<Box> {
+fn read_box(row: &rusqlite::Row) -> rusqlite::Result<DrawerBox> {
     let id_str: String = row.get(0)?;
     let name: String = row.get(1)?;
     let type_int: i32 = row.get(2)?;
@@ -47,7 +47,7 @@ fn read_box(row: &rusqlite::Row) -> rusqlite::Result<Box> {
     let created_at_str: String = row.get(5)?;
     let updated_at_str: String = row.get(6)?;
 
-    Ok(Box {
+    Ok(DrawerBox {
         id: parse_uuid(&id_str)?,
         name,
         box_type: BoxType::from_i32(type_int)
@@ -269,7 +269,7 @@ impl DrawerRepository {
     // ── Boxes ─────────────────────────────────────────────
 
     /// Get all boxes ordered by SortOrder then Name.
-    pub fn get_boxes(&self) -> AppResult<Vec<Box>> {
+    pub fn get_boxes(&self) -> AppResult<Vec<DrawerBox>> {
         let conn = self.create_connection()?;
         let mut stmt = conn.prepare(
             "SELECT Id, Name, Type, StoragePath, SortOrder, CreatedAt, UpdatedAt
@@ -281,7 +281,7 @@ impl DrawerRepository {
     }
 
     /// Get a single box by id, or `None` if not found.
-    pub fn get_box(&self, box_id: Uuid) -> AppResult<Option<Box>> {
+    pub fn get_box(&self, box_id: Uuid) -> AppResult<Option<DrawerBox>> {
         let conn = self.create_connection()?;
         let mut stmt = conn.prepare(
             "SELECT Id, Name, Type, StoragePath, SortOrder, CreatedAt, UpdatedAt
@@ -296,7 +296,7 @@ impl DrawerRepository {
     }
 
     /// Insert a new box.
-    pub fn add_box(&self, b: &Box) -> AppResult<()> {
+    pub fn add_box(&self, b: &DrawerBox) -> AppResult<()> {
         let conn = self.create_connection()?;
         conn.execute(
             "INSERT INTO Boxes (Id, Name, Type, StoragePath, SortOrder, CreatedAt, UpdatedAt)
@@ -760,8 +760,8 @@ mod tests {
         Utc::now()
     }
 
-    fn test_box(name: &str) -> Box {
-        Box {
+    fn test_box(name: &str) -> DrawerBox {
+        DrawerBox {
             id: Uuid::new_v4(),
             name: name.to_string(),
             box_type: BoxType::Normal,
