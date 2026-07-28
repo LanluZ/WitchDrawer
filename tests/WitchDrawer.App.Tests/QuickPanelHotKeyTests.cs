@@ -68,4 +68,32 @@ public sealed class QuickPanelHotKeyTests
             }
         }
     }
+
+    [Fact]
+    public async Task StartupInitialization_OnFreshDataDirectory_CreatesSchemaBeforeLoadingHotKey()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "WitchDrawerTests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var paths = new AppPaths(root);
+            var repository = new DrawerRepository(paths.DatabasePath);
+            var drawerService = new DrawerService(paths, repository);
+            var store = new QuickPanelHotKeySettingsStore(drawerService);
+
+            var hotKey = await global::WitchDrawer.App.App.InitializeDataAndLoadQuickPanelHotKeyAsync(
+                drawerService,
+                store);
+
+            Assert.Equal(QuickPanelHotKey.Default, hotKey);
+            Assert.True(File.Exists(paths.DatabasePath));
+            Assert.NotEmpty(await drawerService.GetBoxesAsync());
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
 }

@@ -54,12 +54,13 @@ public partial class App : Application
             var todoService = new TodoService(repository);
             var updateService = new UpdateService(logger);
             var quickPanelHotKeySettings = new QuickPanelHotKeySettingsStore(drawerService);
-            var quickPanelHotKey = await quickPanelHotKeySettings.LoadAsync();
 
             logger.Info("Data directory: " + paths.RootDirectory);
             logger.Info("Database path: " + paths.DatabasePath);
 
-            await drawerService.InitializeAsync();
+            var quickPanelHotKey = await InitializeDataAndLoadQuickPanelHotKeyAsync(
+                drawerService,
+                quickPanelHotKeySettings);
             AppThemeManager.Apply(await LoadSavedThemeAsync(drawerService));
 
             var quickPanelViewModel = new QuickPanelViewModel(drawerService, launcher, logger);
@@ -152,6 +153,15 @@ public partial class App : Application
                 MessageBoxImage.Error);
             Shutdown(-1);
         }
+    }
+
+    internal static async Task<QuickPanelHotKey> InitializeDataAndLoadQuickPanelHotKeyAsync(
+        DrawerService drawerService,
+        QuickPanelHotKeySettingsStore quickPanelHotKeySettings,
+        CancellationToken cancellationToken = default)
+    {
+        await drawerService.InitializeAsync(cancellationToken);
+        return await quickPanelHotKeySettings.LoadAsync(cancellationToken);
     }
 
     private static async Task<AppTheme> LoadSavedThemeAsync(DrawerService drawerService)
