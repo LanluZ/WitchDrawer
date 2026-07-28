@@ -35,7 +35,10 @@ public static class ShellIconProvider
         }
 
         var fullPath = Path.GetFullPath(path);
-        size = Math.Clamp(size, 16, 128);
+        size = Math.Clamp(
+            size,
+            DpiAwareIconSize.MinimumSourcePixelSize,
+            DpiAwareIconSize.MaximumSourcePixelSize);
         var cacheKey = $"{(isDirectory ? "D" : "F")}|{size}|{fullPath}";
         var createdTask = new Lazy<Task<ImageSource?>>(
             () => LoadIconAsync(cacheKey, fullPath, isDirectory, size),
@@ -247,9 +250,18 @@ public static class ShellIconProvider
                 return null;
             }
 
+            var imageFlags = ShellItemImageFactoryFlags.IconOnly;
+            if (size > 48)
+            {
+                // Large canonical requests may use an even bigger Shell source
+                // before their one-time conversion. At 32/48 px, asking for the
+                // exact native frame avoids an unnecessary second resample.
+                imageFlags |= ShellItemImageFactoryFlags.BiggerSizeOk;
+            }
+
             result = imageFactory.GetImage(
                 new NativeSize(size, size),
-                ShellItemImageFactoryFlags.BiggerSizeOk | ShellItemImageFactoryFlags.IconOnly,
+                imageFlags,
                 out var bitmapHandle);
             if (bitmapHandle == nint.Zero)
             {
@@ -496,9 +508,15 @@ public static class ShellIconProvider
                 shellLink.GetPath(targetPath, targetPath.Capacity, nint.Zero, 0);
 
                 var iconLocation = new StringBuilder(MaxPath);
-                shellLink.GetIconLocation(iconLocation, iconLocation.Capacity, out _);
+                var iconResult = shellLink.GetIconLocation(
+                    iconLocation,
+                    iconLocation.Capacity,
+                    out var iconIndex);
+                var indexedIconLocation = iconResult >= 0 && iconLocation.Length > 0
+                    ? $"{iconLocation},{iconIndex}"
+                    : string.Empty;
 
-                return new ShortcutDescriptor(targetPath.ToString(), iconLocation.ToString());
+                return new ShortcutDescriptor(targetPath.ToString(), indexedIconLocation);
             }
             catch
             {

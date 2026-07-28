@@ -2,8 +2,11 @@ namespace WitchDrawer.App.Infrastructure;
 
 public static class DpiAwareIconSize
 {
+    public const int MinimumSourcePixelSize = 8;
+    public const int MaximumSourcePixelSize = 256;
+
     private const double PixelatedSourceSizeDip = 16;
-    private static readonly int[] SourcePixelBuckets = [16, 20, 24, 32, 40, 48, 64, 96, 128];
+    private static readonly int[] NativeSourceSizes = [32, 48, 64, 96, 128, 256];
 
     public static int Calculate(
         double displayWidthDip,
@@ -23,17 +26,32 @@ public static class DpiAwareIconSize
         var targetHeightDip = isPixelated
             ? Math.Min(heightDip, PixelatedSourceSizeDip)
             : heightDip;
-        var targetPixels = (int)Math.Ceiling(Math.Max(targetWidthDip * scaleX, targetHeightDip * scaleY));
-
-        foreach (var bucket in SourcePixelBuckets)
+        var targetPhysicalPixels = Math.Max(targetWidthDip * scaleX, targetHeightDip * scaleY);
+        if (targetPhysicalPixels >= MaximumSourcePixelSize)
         {
-            if (targetPixels <= bucket)
+            return MaximumSourcePixelSize;
+        }
+
+        var targetPixels = Math.Max(
+            (int)Math.Round(targetPhysicalPixels, MidpointRounding.AwayFromZero),
+            MinimumSourcePixelSize);
+        if (isPixelated)
+        {
+            return targetPixels;
+        }
+
+        // Asking Windows Shell for an arbitrary small size such as 20 px can make
+        // it enlarge a 16 px icon before WPF sees it. Select the next common native
+        // frame instead, then let WPF perform one high-quality downscale.
+        foreach (var sourceSize in NativeSourceSizes)
+        {
+            if (targetPixels <= sourceSize)
             {
-                return bucket;
+                return sourceSize;
             }
         }
 
-        return SourcePixelBuckets[^1];
+        return MaximumSourcePixelSize;
     }
 
     private static double NormalizePositive(double value, double fallback)

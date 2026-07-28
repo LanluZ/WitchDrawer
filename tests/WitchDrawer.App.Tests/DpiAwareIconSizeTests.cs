@@ -5,12 +5,12 @@ namespace WitchDrawer.App.Tests;
 public sealed class DpiAwareIconSizeTests
 {
     [Theory]
-    [InlineData(14, 1.0, false, 16)]
-    [InlineData(20, 1.0, false, 20)]
+    [InlineData(14, 1.0, false, 32)]
+    [InlineData(20, 1.0, false, 32)]
     [InlineData(20, 1.25, false, 32)]
     [InlineData(30, 1.5, false, 48)]
     [InlineData(44, 2.0, false, 96)]
-    public void Calculate_SelectsSmallestSourceBucketThatCoversPhysicalSize(
+    public void Calculate_SelectsTheNextNativeSourceSizeForOneTimeDownscaling(
         double displaySizeDip,
         double dpiScale,
         bool isPixelated,
@@ -68,6 +68,19 @@ public sealed class DpiAwareIconSizeTests
             dpiScaleY: 3,
             isPixelated: false);
 
-        Assert.Equal(128, actual);
+        Assert.Equal(256, actual);
+    }
+
+    [Fact]
+    public void Calculate_CapsExtremeFiniteInputsWithoutOverflow()
+    {
+        var actual = DpiAwareIconSize.Calculate(
+            displayWidthDip: double.MaxValue,
+            displayHeightDip: double.MaxValue,
+            dpiScaleX: 1,
+            dpiScaleY: 1,
+            isPixelated: false);
+
+        Assert.Equal(256, actual);
     }
 }

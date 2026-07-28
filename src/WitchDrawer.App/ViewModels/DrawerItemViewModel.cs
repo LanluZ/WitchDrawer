@@ -40,7 +40,7 @@ public sealed class DrawerItemViewModel : ObservableObject
         BoxName = boxName ?? string.Empty;
         _isPixelated = isPixelated;
         _logger = logger;
-        _requestedIconPixelSize = Math.Clamp(iconPixelSize, 16, 128);
+        _requestedIconPixelSize = NormalizeIconPixelSize(iconPixelSize);
         _gridColumn = Math.Max(0, model.GridColumn ?? 0);
         _gridRow = Math.Max(0, model.GridRow ?? 0);
         _ = LoadIconAsync();
@@ -147,7 +147,7 @@ public sealed class DrawerItemViewModel : ObservableObject
 
     public void RequestIconSize(int iconPixelSize)
     {
-        var normalizedSize = Math.Clamp(iconPixelSize, 16, 128);
+        var normalizedSize = NormalizeIconPixelSize(iconPixelSize);
         var previousSize = Interlocked.Exchange(ref _requestedIconPixelSize, normalizedSize);
         if (previousSize != normalizedSize || !HasIcon)
         {
@@ -300,6 +300,14 @@ public sealed class DrawerItemViewModel : ObservableObject
         }
 
         await application.Dispatcher.InvokeAsync(() => IconImage = icon);
+    }
+
+    private static int NormalizeIconPixelSize(int iconPixelSize)
+    {
+        return Math.Clamp(
+            iconPixelSize,
+            DpiAwareIconSize.MinimumSourcePixelSize,
+            DpiAwareIconSize.MaximumSourcePixelSize);
     }
 
     private string GetFallbackExtension()
