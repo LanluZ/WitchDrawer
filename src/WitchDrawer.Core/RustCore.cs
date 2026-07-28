@@ -11,83 +11,83 @@ namespace WitchDrawer.Core.Services;
 /// </summary>
 public static class RustCore
 {
-    private const string DllName = "witchdrawer_core.dll";
+    internal const string DllName = "witchdrawer_core.dll";
 
     // ── Native declarations ──────────────────────────────────────────────
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr wd_init(byte[] dataDir);
+    internal static extern IntPtr wd_init(byte[] dataDir);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern void wd_dispose(IntPtr ctx);
+    internal static extern void wd_dispose(IntPtr ctx);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr wd_get_boxes(IntPtr ctx);
+    internal static extern IntPtr wd_get_boxes(IntPtr ctx);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr wd_create_box(IntPtr ctx, byte[] name, int boxType);
+    internal static extern IntPtr wd_create_box(IntPtr ctx, byte[] name, int boxType);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr wd_update_box_name(IntPtr ctx, byte[] boxId, byte[] newName);
+    internal static extern IntPtr wd_update_box_name(IntPtr ctx, byte[] boxId, byte[] newName);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr wd_reorder_boxes(IntPtr ctx, byte[] jsonArrayOfIds);
+    internal static extern IntPtr wd_reorder_boxes(IntPtr ctx, byte[] jsonArrayOfIds);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr wd_delete_box(IntPtr ctx, byte[] boxId);
+    internal static extern IntPtr wd_delete_box(IntPtr ctx, byte[] boxId);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr wd_get_items(IntPtr ctx, IntPtr boxIdOrNull);
+    internal static extern IntPtr wd_get_items(IntPtr ctx, IntPtr boxIdOrNull);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr wd_search_items(IntPtr ctx, byte[] query);
+    internal static extern IntPtr wd_search_items(IntPtr ctx, byte[] query);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr wd_import_path(IntPtr ctx, byte[] boxId, byte[] sourcePath, int gridCol, int gridRow);
+    internal static extern IntPtr wd_import_path(IntPtr ctx, byte[] boxId, byte[] sourcePath, int gridCol, int gridRow);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr wd_move_item_to_box(IntPtr ctx, byte[] itemId, byte[] targetBoxId, int gridCol, int gridRow);
+    internal static extern IntPtr wd_move_item_to_box(IntPtr ctx, byte[] itemId, byte[] targetBoxId, int gridCol, int gridRow);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr wd_delete_item(IntPtr ctx, byte[] itemId);
+    internal static extern IntPtr wd_delete_item(IntPtr ctx, byte[] itemId);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr wd_export_item(IntPtr ctx, byte[] itemId, byte[] targetDir);
+    internal static extern IntPtr wd_export_item(IntPtr ctx, byte[] itemId, byte[] targetDir);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr wd_update_grid_pos(IntPtr ctx, byte[] itemId, int gridCol, int gridRow);
+    internal static extern IntPtr wd_update_grid_pos(IntPtr ctx, byte[] itemId, int gridCol, int gridRow);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr wd_get_todos(IntPtr ctx, byte[] boxId);
+    internal static extern IntPtr wd_get_todos(IntPtr ctx, byte[] boxId);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr wd_add_todo(IntPtr ctx, byte[] boxId, byte[] title);
+    internal static extern IntPtr wd_add_todo(IntPtr ctx, byte[] boxId, byte[] title);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr wd_set_todo_completed(IntPtr ctx, byte[] todoId, int isCompleted);
+    internal static extern IntPtr wd_set_todo_completed(IntPtr ctx, byte[] todoId, int isCompleted);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr wd_delete_todo(IntPtr ctx, byte[] todoId);
+    internal static extern IntPtr wd_delete_todo(IntPtr ctx, byte[] todoId);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr wd_archive_completed(IntPtr ctx, byte[] boxId);
+    internal static extern IntPtr wd_archive_completed(IntPtr ctx, byte[] boxId);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr wd_restore_archived(IntPtr ctx, byte[] todoId);
+    internal static extern IntPtr wd_restore_archived(IntPtr ctx, byte[] todoId);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern IntPtr wd_check_update(IntPtr ctx, byte[] currentVersion);
+    internal static extern IntPtr wd_check_update(IntPtr ctx, byte[] currentVersion);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    private static extern void wd_free_string(IntPtr ptr);
+    internal static extern void wd_free_string(IntPtr ptr);
 
     // ── Helpers ──────────────────────────────────────────────────────────
 
     /// <summary>Convert a managed string to a UTF-8 byte array for P/Invoke.</summary>
-    private static byte[] ToUtf8(string s) => System.Text.Encoding.UTF8.GetBytes(s);
+    internal static byte[] ToUtf8(string s) => System.Text.Encoding.UTF8.GetBytes(s);
 
     /// <summary>Read a returned C string and free it, then deserialize the JSON FfiResponse.</summary>
-    private static T Call<T>(Func<IntPtr> nativeCall)
+    internal static T Call<T>(Func<IntPtr> nativeCall)
     {
         var ptr = nativeCall();
         var json = ReadAndFree(ptr);
@@ -103,7 +103,7 @@ public static class RustCore
     }
 
     /// <summary>Read a returned C string and free it, then deserialize a void FfiResponse (returns null on success).</summary>
-    private static void CallVoid(Func<IntPtr> nativeCall)
+    internal static void CallVoid(Func<IntPtr> nativeCall)
     {
         var ptr = nativeCall();
         var json = ReadAndFree(ptr);
@@ -116,7 +116,7 @@ public static class RustCore
         }
     }
 
-    private static string ReadAndFree(IntPtr ptr)
+    internal static string ReadAndFree(IntPtr ptr)
     {
         if (ptr == IntPtr.Zero)
         {
