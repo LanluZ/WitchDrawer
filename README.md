@@ -40,10 +40,11 @@ English: WitchDrawer is a lightweight Windows desktop file drawer built with nat
 |------|------|
 | .NET 10 | 运行时 |
 | WPF | 原生 Windows UI |
+| Rust | 内核层（SQLite 存储、业务逻辑、文件操作） |
 | Win32 API | Shell 打开、全局快捷键、窗口层级 |
 | SQLite | 本地持久化（WAL 模式） |
 | CommunityToolkit.Mvvm | MVVM 框架 |
-| xUnit | 单元测试 |
+| xUnit / cargo test | 单元测试 |
 
 本项目有意避免使用 Electron、WebView 外壳和沉重的第三方 UI 框架。
 
@@ -52,22 +53,46 @@ English: WitchDrawer is a lightweight Windows desktop file drawer built with nat
 ```text
 WitchDrawer.sln
 src/
-  WitchDrawer.App/       WPF UI、窗口、视图模型、拖放、快捷键绑定
-  WitchDrawer.Core/      模型、SQLite 持久化、文件导入/删除规则、更新检查
-  WitchDrawer.Native/    Shell 打开、全局快捷键、系统托盘
+  WitchDrawer.App/         WPF UI、窗口、视图模型、拖放、快捷键绑定
+  WitchDrawer.Core/        模型、SQLite 持久化、文件导入/删除规则、更新检查
+  WitchDrawer.Native/      Shell 打开、全局快捷键、系统托盘
+  WitchDrawer.RustBridge/  P/Invoke 封装，桥接 Rust 内核
+rust/
+  witchdrawer-core/        Rust cdylib（SQLite 仓储、业务逻辑、FFI 导出）
 tests/
   WitchDrawer.Core.Tests/
+  WitchDrawer.App.Tests/
+benchmarks/
+  BenchDotnet/             .NET 内存 benchmark
+installer/
+  WitchDrawer.iss          Inno Setup 安装脚本
+build.ps1                  一键构建脚本（cargo + dotnet）
 ```
 
 ## 环境要求
 
 - Windows 10/11
 - .NET SDK `10.0.300` 或兼容的 .NET 10 SDK
+- Rust toolchain（stable，用于编译 `witchdrawer_core.dll`）
 
 ## 构建
 
+一键构建（推荐）：
+
 ```powershell
-dotnet build WitchDrawer.sln
+.\build.ps1 -Release
+```
+
+手动分步构建：
+
+```powershell
+# 1. 构建 Rust DLL
+cd rust\witchdrawer-core
+cargo build --release
+cd ..\..
+
+# 2. 构建 .NET 解决方案
+dotnet build WitchDrawer.sln -c Release
 ```
 
 Debug 可执行文件位于：
@@ -79,7 +104,11 @@ src/WitchDrawer.App/bin/Debug/net10.0-windows/WitchDrawer.App.exe
 ## 测试
 
 ```powershell
+# .NET 测试
 dotnet test WitchDrawer.sln
+
+# Rust 测试
+cd rust\witchdrawer-core && cargo test --lib
 ```
 
 测试覆盖：默认收纳盒创建、普通/映射/像素盒导入、重复文件名后缀、跨盒移动、原位还原删除、更新 URL 校验等。
