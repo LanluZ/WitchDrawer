@@ -1,13 +1,17 @@
 use std::time::Instant;
-use witchdrawer_core::storage::DrawerRepository;
-use witchdrawer_core::services::DrawerService;
-use witchdrawer_core::services::app_paths::AppPaths;
 use witchdrawer_core::models::*;
+use witchdrawer_core::services::app_paths::AppPaths;
+use witchdrawer_core::services::DrawerService;
+use witchdrawer_core::storage::DrawerRepository;
 
 fn bench<F: FnMut()>(name: &str, iters: u32, mut f: F) {
-    for _ in 0..3 { f(); }
+    for _ in 0..3 {
+        f();
+    }
     let start = Instant::now();
-    for _ in 0..iters { f(); }
+    for _ in 0..iters {
+        f();
+    }
     let elapsed = start.elapsed();
     let avg_us = elapsed.as_micros() as f64 / iters as f64;
     println!("{:<45} {:>6} iters  {:>10.2} us/iter", name, iters, avg_us);
@@ -34,29 +38,42 @@ fn main() {
             sort_order: 0,
             created_at: chrono::Utc::now(),
             updated_at: chrono::Utc::now(),
-        }).unwrap();
+        })
+        .unwrap();
     });
 
     let mut box_ids = Vec::new();
     for i in 0..100 {
         let id = uuid::Uuid::new_v4();
         repo.add_box(&DrawerBox {
-            id, name: format!("ReadBox {}", i), box_type: BoxType::Normal,
-            storage_path: None, sort_order: i,
-            created_at: chrono::Utc::now(), updated_at: chrono::Utc::now(),
-        }).unwrap();
+            id,
+            name: format!("ReadBox {}", i),
+            box_type: BoxType::Normal,
+            storage_path: None,
+            sort_order: i,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        })
+        .unwrap();
         box_ids.push(id);
     }
 
     let main_box = box_ids[0];
     for i in 0..500 {
         repo.add_item(&DrawerItem {
-            id: uuid::Uuid::new_v4(), box_id: main_box,
-            display_name: format!("Item {}.txt", i), item_kind: ItemKind::File,
-            source_path: Some(format!("C:/test/{}.txt", i)), stored_path: None,
-            sort_order: i, created_at: chrono::Utc::now(), updated_at: chrono::Utc::now(),
-            grid_column: None, grid_row: None,
-        }).unwrap();
+            id: uuid::Uuid::new_v4(),
+            box_id: main_box,
+            display_name: format!("Item {}.txt", i),
+            item_kind: ItemKind::File,
+            source_path: Some(format!("C:/test/{}.txt", i)),
+            stored_path: None,
+            sort_order: i,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            grid_column: None,
+            grid_row: None,
+        })
+        .unwrap();
     }
 
     println!("\n-- Storage: Read --");
@@ -90,17 +107,29 @@ fn main() {
 
     let todo_box = uuid::Uuid::new_v4();
     repo.add_box(&DrawerBox {
-        id: todo_box, name: "TodoBox".into(), box_type: BoxType::Todo,
-        storage_path: None, sort_order: 999,
-        created_at: chrono::Utc::now(), updated_at: chrono::Utc::now(),
-    }).unwrap();
+        id: todo_box,
+        name: "TodoBox".into(),
+        box_type: BoxType::Todo,
+        storage_path: None,
+        sort_order: 999,
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+    })
+    .unwrap();
     for i in 0..200 {
         repo.add_todo(&TodoItem {
-            id: uuid::Uuid::new_v4(), box_id: todo_box,
-            title: format!("Todo {}", i), is_completed: i % 3 == 0,
-            sort_order: i, created_at: chrono::Utc::now(), updated_at: chrono::Utc::now(),
-            completed_at: None, is_archived: false, archived_at: None,
-        }).unwrap();
+            id: uuid::Uuid::new_v4(),
+            box_id: todo_box,
+            title: format!("Todo {}", i),
+            is_completed: i % 3 == 0,
+            sort_order: i,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            completed_at: None,
+            is_archived: false,
+            archived_at: None,
+        })
+        .unwrap();
     }
 
     bench("get_todos (200 rows)", 500, || {
@@ -110,10 +139,18 @@ fn main() {
     bench("add_todo + remove_todo", 500, || {
         let id = uuid::Uuid::new_v4();
         repo.add_todo(&TodoItem {
-            id, box_id: todo_box, title: "Temp".into(), is_completed: false,
-            sort_order: 9999, created_at: chrono::Utc::now(), updated_at: chrono::Utc::now(),
-            completed_at: None, is_archived: false, archived_at: None,
-        }).unwrap();
+            id,
+            box_id: todo_box,
+            title: "Temp".into(),
+            is_completed: false,
+            sort_order: 9999,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            completed_at: None,
+            is_archived: false,
+            archived_at: None,
+        })
+        .unwrap();
         repo.remove_todo(id).unwrap();
     });
 
@@ -125,7 +162,8 @@ fn main() {
     svc.initialize().unwrap();
 
     bench("create_box (service, full flow)", 500, || {
-        svc.create_box(&format!("Box {}", uuid::Uuid::new_v4()), BoxType::Normal).unwrap();
+        svc.create_box(&format!("Box {}", uuid::Uuid::new_v4()), BoxType::Normal)
+            .unwrap();
     });
 
     bench("get_boxes (service, all)", 500, || {

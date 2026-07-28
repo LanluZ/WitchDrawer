@@ -1,12 +1,12 @@
 mod box_model;
 mod drawer_item;
-mod todo_item;
 mod results;
+mod todo_item;
 
 pub use box_model::*;
 pub use drawer_item::*;
-pub use todo_item::*;
 pub use results::*;
+pub use todo_item::*;
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -60,7 +60,10 @@ pub struct AppError {
 
 impl AppError {
     pub fn new(code: i32, message: impl Into<String>) -> Self {
-        Self { code, message: message.into() }
+        Self {
+            code,
+            message: message.into(),
+        }
     }
 
     pub fn not_found(msg: impl Into<String>) -> Self {
@@ -114,15 +117,24 @@ pub struct FfiResponse<T: Serialize> {
 
 impl<T: Serialize> FfiResponse<T> {
     pub fn success(data: T) -> Self {
-        Self { ok: true, data: Some(data), error: None }
+        Self {
+            ok: true,
+            data: Some(data),
+            error: None,
+        }
     }
 
     pub fn failure(msg: impl Into<String>) -> Self {
-        Self { ok: false, data: None, error: Some(msg.into()) }
+        Self {
+            ok: false,
+            data: None,
+            error: Some(msg.into()),
+        }
     }
 
     pub fn to_json(&self) -> String {
-        serde_json::to_string(self).unwrap_or_else(|_| r#"{"ok":false,"error":"serialization failed"}"#.to_string())
+        serde_json::to_string(self)
+            .unwrap_or_else(|_| r#"{"ok":false,"error":"serialization failed"}"#.to_string())
     }
 }
 

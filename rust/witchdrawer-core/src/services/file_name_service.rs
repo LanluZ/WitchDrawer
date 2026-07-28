@@ -1,6 +1,5 @@
 //! Generate unique destination paths by appending `(1)`, `(2)`, … suffixes.
 
-use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -70,8 +69,7 @@ mod tests {
     #[test]
     fn unique_when_no_conflict() {
         let tmp = TempDir::new().unwrap();
-        let result =
-            get_unique_destination_path(tmp.path(), "hello.txt", false).unwrap();
+        let result = get_unique_destination_path(tmp.path(), "hello.txt", false).unwrap();
         assert_eq!(result, tmp.path().join("hello.txt"));
     }
 
@@ -79,8 +77,7 @@ mod tests {
     fn file_suffix_on_conflict() {
         let tmp = TempDir::new().unwrap();
         fs::write(tmp.path().join("hello.txt"), "").unwrap();
-        let result =
-            get_unique_destination_path(tmp.path(), "hello.txt", false).unwrap();
+        let result = get_unique_destination_path(tmp.path(), "hello.txt", false).unwrap();
         assert_eq!(result, tmp.path().join("hello (1).txt"));
     }
 
@@ -88,8 +85,7 @@ mod tests {
     fn dir_suffix_on_conflict() {
         let tmp = TempDir::new().unwrap();
         fs::create_dir(tmp.path().join("mydir")).unwrap();
-        let result =
-            get_unique_destination_path(tmp.path(), "mydir", true).unwrap();
+        let result = get_unique_destination_path(tmp.path(), "mydir", true).unwrap();
         assert_eq!(result, tmp.path().join("mydir (1)"));
     }
 
@@ -99,8 +95,7 @@ mod tests {
         fs::write(tmp.path().join("f.txt"), "").unwrap();
         fs::write(tmp.path().join("f (1).txt"), "").unwrap();
         fs::write(tmp.path().join("f (2).txt"), "").unwrap();
-        let result =
-            get_unique_destination_path(tmp.path(), "f.txt", false).unwrap();
+        let result = get_unique_destination_path(tmp.path(), "f.txt", false).unwrap();
         assert_eq!(result, tmp.path().join("f (3).txt"));
     }
 
@@ -108,8 +103,7 @@ mod tests {
     fn file_without_extension() {
         let tmp = TempDir::new().unwrap();
         fs::write(tmp.path().join("Makefile"), "").unwrap();
-        let result =
-            get_unique_destination_path(tmp.path(), "Makefile", false).unwrap();
+        let result = get_unique_destination_path(tmp.path(), "Makefile", false).unwrap();
         assert_eq!(result, tmp.path().join("Makefile (1)"));
     }
 }

@@ -27,7 +27,6 @@
 //! ```
 
 use std::collections::HashSet;
-use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -35,8 +34,8 @@ use chrono::Utc;
 use uuid::Uuid;
 
 use crate::models::{
-    AppError, AppResult, DrawerBox, BoxDeleteResult, BoxType, DrawerItem,
-    ItemDeleteResult, ItemKind,
+    AppError, AppResult, BoxDeleteResult, BoxType, DrawerBox, DrawerItem, ItemDeleteResult,
+    ItemKind,
 };
 use crate::storage::DrawerRepository;
 
@@ -206,9 +205,7 @@ impl DrawerService {
             .ok_or_else(|| AppError::not_found("Box does not exist."))?;
 
         if b.box_type == BoxType::Todo {
-            return Err(AppError::invalid_arg(
-                "Todo boxes do not accept files.",
-            ));
+            return Err(AppError::invalid_arg("Todo boxes do not accept files."));
         }
 
         let full_source = path_safety::get_full_existing_path(source_path)?;
@@ -256,6 +253,7 @@ impl DrawerService {
                     .boxes_directory()
                     .join(format!("{:?}", box_id).replace('-', ""))
             });
+        path_safety::ensure_child_path(&self.paths.boxes_directory(), &storage_root)?;
         fs::create_dir_all(&storage_root)?;
 
         let target_path = file_name_service::get_unique_destination_path(
@@ -333,18 +331,22 @@ impl DrawerService {
 
         let target_sort = self.repository.get_next_item_sort_order(target_box_id)?;
         let source_path = item.source_path.clone();
-        let mut stored_path = item.stored_path.clone();
         let mut display_name = item.display_name.clone();
         let is_directory = item.item_kind == ItemKind::Directory;
 
-        if target_box.box_type == BoxType::Mapping {
+        let stored_path: Option<String> = if target_box.box_type == BoxType::Mapping {
             // Stored items cannot move into a mapping box.
-            if item.stored_path.as_deref().map(|s| !s.trim().is_empty()).unwrap_or(false) {
+            if item
+                .stored_path
+                .as_deref()
+                .map(|s| !s.trim().is_empty())
+                .unwrap_or(false)
+            {
                 return Err(AppError::invalid_arg(
                     "Stored items cannot be moved into a mapping box.",
                 ));
             }
-            stored_path = None;
+            None
         } else {
             // Target is Normal/Pixel.
             if source_box.box_type == BoxType::Mapping {
@@ -360,7 +362,12 @@ impl DrawerService {
             let full_source = path_safety::get_full_existing_path(effective)?;
 
             // If the item is stored, validate it's under Boxes.
-            if item.stored_path.as_deref().map(|s| !s.trim().is_empty()).unwrap_or(false) {
+            if item
+                .stored_path
+                .as_deref()
+                .map(|s| !s.trim().is_empty())
+                .unwrap_or(false)
+            {
                 path_safety::ensure_child_path(&self.paths.boxes_directory(), &full_source)?;
             }
 
@@ -373,6 +380,7 @@ impl DrawerService {
                         .boxes_directory()
                         .join(format!("{:?}", target_box_id).replace('-', ""))
                 });
+            path_safety::ensure_child_path(&self.paths.boxes_directory(), &storage_root)?;
             fs::create_dir_all(&storage_root)?;
 
             let target_path = file_name_service::get_unique_destination_path(
@@ -389,7 +397,7 @@ impl DrawerService {
                 .unwrap_or_default()
                 .to_string_lossy()
                 .to_string();
-            stored_path = Some(target_path.to_string_lossy().to_string());
+            let stored_path = Some(target_path.to_string_lossy().to_string());
 
             let move_result = self.repository.move_item_to_box(
                 &item,
@@ -412,7 +420,7 @@ impl DrawerService {
             }
 
             return Ok(());
-        }
+        };
 
         // Mapping target path.
         self.repository.move_item_to_box(
@@ -493,7 +501,12 @@ impl DrawerService {
             .ok_or_else(|| AppError::not_found("Item does not exist."))?;
 
         // Mapping items (no stored path) — just remove the DB record.
-        if item.stored_path.as_deref().map(|s| s.trim().is_empty()).unwrap_or(true) {
+        if item
+            .stored_path
+            .as_deref()
+            .map(|s| s.trim().is_empty())
+            .unwrap_or(true)
+        {
             self.repository.remove_item(item_id)?;
             return Ok(ItemDeleteResult {
                 item_id: item.id.to_string(),
@@ -502,7 +515,10 @@ impl DrawerService {
                 restored_path: None,
                 restored_to_original: false,
                 restored_to_desktop: false,
-                status_message: format!("\u{5DF2}\u{79FB}\u{9664}\u{5F15}\u{7528} {}", item.display_name),
+                status_message: format!(
+                    "\u{5DF2}\u{79FB}\u{9664}\u{5F15}\u{7528} {}",
+                    item.display_name
+                ),
             });
         }
 
@@ -513,11 +529,7 @@ impl DrawerService {
             if let (Some(ref sp), Some(ref rp)) = (item.stored_path, &restore.restored_path) {
                 if !sp.trim().is_empty() && !rp.is_empty() {
                     let is_dir = item.item_kind == ItemKind::Directory;
-                    Self::try_compensate_move(
-                        Path::new(rp),
-                        Path::new(sp),
-                        is_dir,
-                    );
+                    Self::try_compensate_move(Path::new(rp), Path::new(sp), is_dir);
                 }
             }
             return Err(e);
@@ -564,7 +576,12 @@ impl DrawerService {
         let mut failures: Vec<String> = vec![];
 
         for item in &items {
-            if item.stored_path.as_deref().map(|s| s.trim().is_empty()).unwrap_or(true) {
+            if item
+                .stored_path
+                .as_deref()
+                .map(|s| s.trim().is_empty())
+                .unwrap_or(true)
+            {
                 if let Err(e) = self.repository.remove_item(item.id) {
                     failures.push(format!("{}: {}", item.display_name, e));
                 }
@@ -594,9 +611,9 @@ impl DrawerService {
                 restored_count,
                 failed_count: failures.len() as i32,
                 failures,
-                status_message: format!(
+                status_message:
                     "\u{5220}\u{9664}\u{672A}\u{5B8C}\u{6210}\u{FF1C}\u{5DF2}\u{4FDD}\u{7559}"
-                ),
+                        .to_string(),
             });
         }
 
@@ -663,10 +680,7 @@ impl DrawerService {
             .filter(|i| {
                 i.stored_path
                     .as_deref()
-                    .map(|sp| {
-                        !sp.trim().is_empty()
-                            && !Path::new(sp).exists()
-                    })
+                    .map(|sp| !sp.trim().is_empty() && !Path::new(sp).exists())
                     .unwrap_or(false)
             })
             .map(|i| i.id)
@@ -684,14 +698,8 @@ impl DrawerService {
         if !boxes.is_empty() {
             return Ok(());
         }
-        self.create_box(
-            "\u{666E}\u{901A}\u{6536}\u{7EB3}\u{76D2}",
-            BoxType::Normal,
-        )?;
-        self.create_box(
-            "\u{6620}\u{5C04}\u{6536}\u{7EB3}\u{76D2}",
-            BoxType::Mapping,
-        )?;
+        self.create_box("\u{666E}\u{901A}\u{6536}\u{7EB3}\u{76D2}", BoxType::Normal)?;
+        self.create_box("\u{6620}\u{5C04}\u{6536}\u{7EB3}\u{76D2}", BoxType::Mapping)?;
         Ok(())
     }
 
@@ -711,9 +719,9 @@ impl DrawerService {
     fn restore_stored_item(
         &self,
         item: &DrawerItem,
-        mut reserved: Option<&mut HashSet<String>>,
+        reserved: Option<&mut HashSet<String>>,
     ) -> AppResult<ItemDeleteResult> {
-        let plan = self.create_restore_plan(item, reserved.as_deref_mut())?;
+        let plan = self.create_restore_plan(item, reserved)?;
         file_ops::move_file(&plan.source_path, &plan.target_path, plan.is_directory)?;
 
         Ok(ItemDeleteResult {
@@ -746,7 +754,9 @@ impl DrawerService {
             .stored_path
             .as_deref()
             .filter(|s| !s.trim().is_empty())
-            .ok_or_else(|| AppError::invalid_arg("Mapping items do not have stored files to restore."))?;
+            .ok_or_else(|| {
+                AppError::invalid_arg("Mapping items do not have stored files to restore.")
+            })?;
 
         let stored_path = path_safety::get_full_existing_path(stored)?;
         path_safety::ensure_child_path(&self.paths.boxes_directory(), &stored_path)?;
@@ -755,9 +765,9 @@ impl DrawerService {
         let original_name = Self::resolve_restore_file_name(item, &stored_path);
 
         // Try the original source directory first.
-        if let Some(orig_dir) = Self::try_get_existing_original_directory(
-            item.source_path.as_deref(),
-        ) {
+        if let Some(orig_dir) =
+            Self::try_get_existing_original_directory(item.source_path.as_deref())
+        {
             let target = Self::get_reserved_unique_destination_path(
                 &orig_dir,
                 &original_name,
@@ -836,10 +846,9 @@ impl DrawerService {
     /// Check if the original source directory still exists.
     fn try_get_existing_original_directory(source_path: Option<&str>) -> Option<PathBuf> {
         let sp = source_path?;
-        let full = Path::new(sp).canonicalize().ok()?;
-        let dir = full.parent()?;
-        if dir.is_dir() {
-            Some(dir.to_path_buf())
+        let parent = Path::new(sp).parent()?.canonicalize().ok()?;
+        if parent.is_dir() {
+            Some(parent)
         } else {
             None
         }
@@ -880,13 +889,10 @@ impl DrawerService {
         is_dir: bool,
         mut reserved: Option<&mut HashSet<String>>,
     ) -> AppResult<PathBuf> {
-        let target =
-            file_name_service::get_unique_destination_path(directory, file_name, is_dir)?;
+        let target = file_name_service::get_unique_destination_path(directory, file_name, is_dir)?;
 
         if let Some(ref mut res) = reserved {
-            let normalized = target
-                .canonicalize()
-                .unwrap_or_else(|_| target.clone());
+            let normalized = target.canonicalize().unwrap_or_else(|_| target.clone());
             let key = normalized.to_string_lossy().to_string();
             if res.insert(key) {
                 return Ok(target);
@@ -912,8 +918,7 @@ impl DrawerService {
             };
 
             for idx in 1..10_000 {
-                let candidate =
-                    directory.join(format!("{} ({}){}", stem, idx, ext));
+                let candidate = directory.join(format!("{} ({}){}", stem, idx, ext));
                 let exists = if is_dir {
                     candidate.is_dir()
                 } else {
@@ -950,7 +955,9 @@ impl DrawerService {
             });
 
         if let Ok(full) = storage.canonicalize() {
-            let _ = path_safety::ensure_child_path(&self.paths.boxes_directory(), &full);
+            if path_safety::ensure_child_path(&self.paths.boxes_directory(), &full).is_err() {
+                return;
+            }
             if full.is_dir() {
                 // Only delete if empty.
                 if fs::read_dir(&full)
@@ -961,5 +968,134 @@ impl DrawerService {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn create_service(temp: &TempDir) -> (DrawerService, DrawerRepository, AppPaths) {
+        let data_root = temp.path().join("app-data");
+        let paths = AppPaths::new(data_root);
+        let repository = DrawerRepository::new(paths.database_path().to_string_lossy().to_string());
+        let service = DrawerService::new(paths.clone(), repository.clone());
+        service.initialize().unwrap();
+        (service, repository, paths)
+    }
+
+    #[test]
+    fn normal_box_import_and_delete_restores_to_original_directory() {
+        let temp = TempDir::new().unwrap();
+        let (service, _, _) = create_service(&temp);
+        let normal_box = service
+            .get_boxes()
+            .unwrap()
+            .into_iter()
+            .find(|b| b.box_type == BoxType::Normal)
+            .unwrap();
+
+        let source_directory = temp.path().join("source");
+        fs::create_dir_all(&source_directory).unwrap();
+        let source_path = source_directory.join("notes.txt");
+        fs::write(&source_path, "important").unwrap();
+
+        let imported = service
+            .import_path(normal_box.id, source_path.to_str().unwrap(), None, None)
+            .unwrap();
+
+        assert!(!source_path.exists());
+        assert!(Path::new(imported.stored_path.as_deref().unwrap()).is_file());
+
+        let result = service.delete_item(imported.id).unwrap();
+
+        assert!(result.restored_to_original);
+        assert!(!result.restored_to_desktop);
+        assert_eq!(
+            Path::new(result.restored_path.as_deref().unwrap())
+                .canonicalize()
+                .unwrap(),
+            source_path.canonicalize().unwrap()
+        );
+        assert_eq!(fs::read_to_string(&source_path).unwrap(), "important");
+    }
+
+    #[test]
+    fn import_rejects_box_storage_outside_boxes_root_without_creating_it() {
+        let temp = TempDir::new().unwrap();
+        let (service, repository, _) = create_service(&temp);
+        let external_storage = temp.path().join("outside-storage");
+        let now = Utc::now();
+        let external_box = DrawerBox {
+            id: Uuid::new_v4(),
+            name: "Unsafe".to_string(),
+            box_type: BoxType::Normal,
+            storage_path: Some(external_storage.to_string_lossy().to_string()),
+            sort_order: 100,
+            created_at: now,
+            updated_at: now,
+        };
+        repository.add_box(&external_box).unwrap();
+
+        let source_path = temp.path().join("source.txt");
+        fs::write(&source_path, "data").unwrap();
+
+        let result =
+            service.import_path(external_box.id, source_path.to_str().unwrap(), None, None);
+
+        assert!(result.is_err());
+        assert!(source_path.exists());
+        assert!(!external_storage.exists());
+    }
+
+    #[test]
+    fn mapping_box_only_stores_and_removes_reference() {
+        let temp = TempDir::new().unwrap();
+        let (service, _, _) = create_service(&temp);
+        let mapping_box = service
+            .get_boxes()
+            .unwrap()
+            .into_iter()
+            .find(|b| b.box_type == BoxType::Mapping)
+            .unwrap();
+        let source_path = temp.path().join("mapped.txt");
+        fs::write(&source_path, "mapped-data").unwrap();
+
+        let imported = service
+            .import_path(mapping_box.id, source_path.to_str().unwrap(), None, None)
+            .unwrap();
+
+        assert!(source_path.is_file());
+        assert!(imported.stored_path.is_none());
+
+        let result = service.delete_item(imported.id).unwrap();
+
+        assert!(!result.was_stored_item);
+        assert_eq!(fs::read_to_string(source_path).unwrap(), "mapped-data");
+    }
+
+    #[test]
+    fn deleting_box_never_deletes_storage_outside_boxes_root() {
+        let temp = TempDir::new().unwrap();
+        let (service, repository, _) = create_service(&temp);
+        let external_storage = temp.path().join("outside-empty-directory");
+        fs::create_dir_all(&external_storage).unwrap();
+        let now = Utc::now();
+        let external_box = DrawerBox {
+            id: Uuid::new_v4(),
+            name: "Unsafe".to_string(),
+            box_type: BoxType::Normal,
+            storage_path: Some(external_storage.to_string_lossy().to_string()),
+            sort_order: 100,
+            created_at: now,
+            updated_at: now,
+        };
+        repository.add_box(&external_box).unwrap();
+
+        let result = service.delete_box(external_box.id).unwrap();
+
+        assert!(result.box_removed);
+        assert!(external_storage.is_dir());
     }
 }

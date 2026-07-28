@@ -13,6 +13,13 @@
 
 Core defines abstractions for native operations. Native implements them. App composes the concrete services.
 
+`WitchDrawer.RustBridge` and `rust/witchdrawer-core` are an experimental,
+test-only migration path. The production WPF application does not reference
+them; `WitchDrawer.Core` remains the owner of models, SQLite persistence, file
+rules, search, and safety checks. RustBridge may become a production adapter
+only after its asynchronous/cancellation surface and feature parity are
+complete and this architecture decision is revised explicitly.
+
 ## Data Flow
 - Startup creates app directories, initializes SQLite schema, and creates the default normal and mapping boxes if the database is empty.
 - Dragging into a normal box moves the file or folder into that box's storage directory, then persists a `DrawerItem`.

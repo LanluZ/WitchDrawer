@@ -104,7 +104,7 @@ impl AppPaths {
     /// Probe the root directory by creating and immediately deleting a file.
     fn ensure_root_directory_writable(&self) -> AppResult<()> {
         let probe = self.root.join(WRITABILITY_PROBE);
-        match fs::write(&probe, &[1u8]) {
+        match fs::write(&probe, [1u8]) {
             Ok(()) => {
                 let _ = fs::remove_file(&probe);
                 Ok(())

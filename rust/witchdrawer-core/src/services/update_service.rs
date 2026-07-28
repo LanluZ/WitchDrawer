@@ -64,7 +64,12 @@ impl Version {
         let minor = parts.get(1).and_then(|p| p.parse().ok()).unwrap_or(0);
         let patch = parts.get(2).and_then(|p| p.parse().ok()).unwrap_or(0);
         let build = parts.get(3).and_then(|p| p.parse().ok()).unwrap_or(0);
-        Some(Self { major, minor, patch, build })
+        Some(Self {
+            major,
+            minor,
+            patch,
+            build,
+        })
     }
 }
 
@@ -92,6 +97,12 @@ pub struct UpdateService {
     client: Client,
 }
 
+impl Default for UpdateService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl UpdateService {
     pub fn new() -> Self {
         let client = Client::builder()
@@ -103,19 +114,15 @@ impl UpdateService {
 
     // -- Check for update ---------------------------------------------------
 
-    pub async fn check_for_update(
-        &self,
-        current_version: &str,
-    ) -> AppResult<UpdateCheckResult> {
-        let current = Version::parse(current_version)
-            .unwrap_or(Version { major: 0, minor: 0, patch: 0, build: 0 });
+    pub async fn check_for_update(&self, current_version: &str) -> AppResult<UpdateCheckResult> {
+        let current = Version::parse(current_version).unwrap_or(Version {
+            major: 0,
+            minor: 0,
+            patch: 0,
+            build: 0,
+        });
 
-        let response: GitHubReleaseResponse = match self
-            .client
-            .get(GITHUB_API_URL)
-            .send()
-            .await
-        {
+        let response: GitHubReleaseResponse = match self.client.get(GITHUB_API_URL).send().await {
             Ok(resp) => match resp.json::<GitHubReleaseResponse>().await {
                 Ok(r) => r,
                 Err(_) => return Ok(UpdateCheckResult::default()),
@@ -135,17 +142,13 @@ impl UpdateService {
         let remote = match Version::parse(tag_text) {
             Some(v) => v,
             None => {
-                tracing::info!(
-                    "Failed to parse remote version tag: {}",
-                    response.tag_name
-                );
+                tracing::info!("Failed to parse remote version tag: {}", response.tag_name);
                 return Ok(UpdateCheckResult::default());
             }
         };
 
         let has_update = remote > current;
-        let (download_url, expected_sha256) =
-            self.resolve_asset(&response.assets).await;
+        let (download_url, expected_sha256) = self.resolve_asset(&response.assets).await;
 
         let url = if download_url.is_empty() {
             if response.html_url.is_empty() {
@@ -305,8 +308,11 @@ del "%~f0" >nul 2>&1
 
         if host == "github.com" {
             let path = parsed.path().to_lowercase();
-            return path
-                .contains(&format!("/{}/{}/", GITHUB_OWNER.to_lowercase(), GITHUB_REPO.to_lowercase()));
+            return path.contains(&format!(
+                "/{}/{}/",
+                GITHUB_OWNER.to_lowercase(),
+                GITHUB_REPO.to_lowercase()
+            ));
         }
 
         if host == "objects.githubusercontent.com"
@@ -321,10 +327,7 @@ del "%~f0" >nul 2>&1
     }
 
     /// Find the best asset in the release assets list.
-    async fn resolve_asset(
-        &self,
-        assets: &[GitHubAsset],
-    ) -> (String, Option<String>) {
+    async fn resolve_asset(&self, assets: &[GitHubAsset]) -> (String, Option<String>) {
         if assets.is_empty() {
             return (String::new(), None);
         }
@@ -362,8 +365,7 @@ del "%~f0" >nul 2>&1
             return (String::new(), None);
         }
 
-        if !Self::is_allowed_download_url(&match_asset.browser_download_url)
-        {
+        if !Self::is_allowed_download_url(&match_asset.browser_download_url) {
             tracing::info!(
                 "Rejected release asset URL: {}",
                 match_asset.browser_download_url
@@ -372,10 +374,7 @@ del "%~f0" >nul 2>&1
         }
 
         let sha256 = self.try_resolve_sha256(assets, match_asset).await;
-        (
-            match_asset.browser_download_url.clone(),
-            sha256,
-        )
+        (match_asset.browser_download_url.clone(), sha256)
     }
 
     /// Try to find a SHA-256 checksum for the package asset.
@@ -389,17 +388,13 @@ del "%~f0" >nul 2>&1
         // Companion .sha256 / .sha256.txt
         let companion = assets.iter().find(|a| {
             let n = a.name.to_lowercase();
-            n == format!("{}.sha256", pkg_lower)
-                || n == format!("{}.sha256.txt", pkg_lower)
+            n == format!("{}.sha256", pkg_lower) || n == format!("{}.sha256.txt", pkg_lower)
         });
 
         if let Some(c) = companion {
             if Self::is_allowed_download_url(&c.browser_download_url) {
                 return self
-                    .read_sha256_from_asset(
-                        &c.browser_download_url,
-                        &package.name,
-                    )
+                    .read_sha256_from_asset(&c.browser_download_url, &package.name)
                     .await;
             }
         }
@@ -407,18 +402,13 @@ del "%~f0" >nul 2>&1
         // SHA256SUMS / checksums.txt
         let checksums = assets.iter().find(|a| {
             let n = a.name.to_lowercase();
-            n == "sha256sums"
-                || n == "checksums.txt"
-                || n.ends_with(".sha256sums")
+            n == "sha256sums" || n == "checksums.txt" || n.ends_with(".sha256sums")
         });
 
         if let Some(c) = checksums {
             if Self::is_allowed_download_url(&c.browser_download_url) {
                 return self
-                    .read_sha256_from_asset(
-                        &c.browser_download_url,
-                        &package.name,
-                    )
+                    .read_sha256_from_asset(&c.browser_download_url, &package.name)
                     .await;
             }
         }
@@ -427,20 +417,8 @@ del "%~f0" >nul 2>&1
     }
 
     /// Parse a checksum text file and extract the hash for `package_name`.
-    async fn read_sha256_from_asset(
-        &self,
-        url: &str,
-        package_name: &str,
-    ) -> Option<String> {
-        let text = self
-            .client
-            .get(url)
-            .send()
-            .await
-            .ok()?
-            .text()
-            .await
-            .ok()?;
+    async fn read_sha256_from_asset(&self, url: &str, package_name: &str) -> Option<String> {
+        let text = self.client.get(url).send().await.ok()?.text().await.ok()?;
 
         for raw_line in text.lines() {
             let line = raw_line.trim();
@@ -462,8 +440,7 @@ del "%~f0" >nul 2>&1
                 return Some(candidate_hash.to_lowercase());
             }
 
-            let file_name =
-                parts.last().unwrap().trim_start_matches('*');
+            let file_name = parts.last().unwrap().trim_start_matches('*');
             if file_name.eq_ignore_ascii_case(package_name)
                 || Path::new(file_name)
                     .file_name()
@@ -531,13 +508,29 @@ mod tests {
     #[test]
     fn version_parse_basic() {
         let v = Version::parse("1.2.3").unwrap();
-        assert_eq!(v, Version { major: 1, minor: 2, patch: 3, build: 0 });
+        assert_eq!(
+            v,
+            Version {
+                major: 1,
+                minor: 2,
+                patch: 3,
+                build: 0
+            }
+        );
     }
 
     #[test]
     fn version_parse_four_part() {
         let v = Version::parse("1.2.3.4").unwrap();
-        assert_eq!(v, Version { major: 1, minor: 2, patch: 3, build: 4 });
+        assert_eq!(
+            v,
+            Version {
+                major: 1,
+                minor: 2,
+                patch: 3,
+                build: 4
+            }
+        );
     }
 
     #[test]
@@ -626,10 +619,7 @@ mod tests {
         assert!(result.ends_with("..."));
 
         let short = "short";
-        assert_eq!(
-            UpdateService::truncate_release_notes(short, 500),
-            "short"
-        );
+        assert_eq!(UpdateService::truncate_release_notes(short, 500), "short");
     }
 
     #[test]

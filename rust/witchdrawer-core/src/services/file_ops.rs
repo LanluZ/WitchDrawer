@@ -11,9 +11,9 @@ use crate::models::{AppError, AppResult};
 /// copy-then-delete when rename fails (cross-volume, locked paths, etc.).
 pub fn move_file(source: &Path, dest: &Path, is_dir: bool) -> AppResult<()> {
     // Resolve source to an absolute canonical path (must exist).
-    let source = source.canonicalize().map_err(|e| {
-        AppError::io_error(format!("Source path does not exist: {}", e))
-    })?;
+    let source = source
+        .canonicalize()
+        .map_err(|e| AppError::io_error(format!("Source path does not exist: {}", e)))?;
     // Canonicalize dest too if it exists (avoids Windows extended-length path mismatch).
     let dest = if dest.exists() {
         dest.canonicalize().unwrap_or_else(|_| dest.to_path_buf())
@@ -198,5 +198,31 @@ mod tests {
         let a = Path::new("/home/user/f.txt");
         let b = Path::new("/tmp/f.txt");
         assert!(are_same_volume(a, b));
+    }
+
+    #[test]
+    fn copy_then_delete_fallback_moves_file_and_removes_source() {
+        let tmp = TempDir::new().unwrap();
+        let src = tmp.path().join("source.txt");
+        let dst = tmp.path().join("destination.txt");
+        fs::write(&src, "cross-volume-data").unwrap();
+
+        copy_then_delete(&src, &dst, false).unwrap();
+
+        assert!(!src.exists());
+        assert_eq!(fs::read_to_string(&dst).unwrap(), "cross-volume-data");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_volume_comparison_is_case_insensitive() {
+        assert!(are_same_volume(
+            Path::new(r"C:\Users\source.txt"),
+            Path::new(r"c:\Temp\destination.txt")
+        ));
+        assert!(!are_same_volume(
+            Path::new(r"C:\Users\source.txt"),
+            Path::new(r"D:\Temp\destination.txt")
+        ));
     }
 }

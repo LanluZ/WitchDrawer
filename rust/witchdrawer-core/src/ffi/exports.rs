@@ -1,3 +1,8 @@
+//! C ABI exports. Every exported operation is unsafe to call from Rust because
+//! raw pointers must originate from this library and string pointers must be
+//! valid, NUL-terminated UTF-8 for the duration of the call.
+#![allow(clippy::missing_safety_doc)]
+
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::panic;
@@ -33,10 +38,7 @@ unsafe fn cstr_to_string(ptr: *const c_char) -> Option<String> {
     if ptr.is_null() {
         return None;
     }
-    CStr::from_ptr(ptr)
-        .to_str()
-        .ok()
-        .map(|s| s.to_string())
+    CStr::from_ptr(ptr).to_str().ok().map(|s| s.to_string())
 }
 
 /// Convert a Rust `String` into an owned C string pointer (caller must free
@@ -46,9 +48,7 @@ fn to_cstring_ptr(s: String) -> *mut c_char {
         Ok(cs) => cs.into_raw(),
         Err(_) => {
             let err = FfiResponse::<()>::failure("Response contained NUL byte");
-            CString::new(err.to_json())
-                .unwrap()
-                .into_raw()
+            CString::new(err.to_json()).unwrap().into_raw()
         }
     }
 }
@@ -80,14 +80,13 @@ where
 // ---------------------------------------------------------------------------
 
 #[no_mangle]
-pub extern "C" fn wd_init(data_dir: *const c_char) -> *mut Context {
+pub unsafe extern "C" fn wd_init(data_dir: *const c_char) -> *mut Context {
     match panic::catch_unwind(panic::AssertUnwindSafe(|| {
-        let dir = unsafe { cstr_to_string(data_dir) }
-            .unwrap_or_else(|| {
-                std::env::current_dir()
-                    .map(|p| p.to_string_lossy().into_owned())
-                    .unwrap_or_else(|_| ".".to_string())
-            });
+        let dir = unsafe { cstr_to_string(data_dir) }.unwrap_or_else(|| {
+            std::env::current_dir()
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_else(|_| ".".to_string())
+        });
 
         let data_path = PathBuf::from(&dir);
         let _ = std::fs::create_dir_all(&data_path);
@@ -95,11 +94,17 @@ pub extern "C" fn wd_init(data_dir: *const c_char) -> *mut Context {
         let log_dir = data_path.join("logs");
         let logger = FileLogger::new(&log_dir, 30);
 
-        let db_path = data_path.join("witchdrawer.db").to_string_lossy().into_owned();
+        let db_path = data_path
+            .join("witchdrawer.db")
+            .to_string_lossy()
+            .into_owned();
         let repo = DrawerRepository::new(&db_path);
 
         let paths = AppPaths::new(data_path.clone());
         let drawer = DrawerService::new(paths, repo.clone());
+        if drawer.initialize().is_err() {
+            return std::ptr::null_mut();
+        }
         let todo_svc = TodoService::new(repo.clone());
         let update_svc = UpdateService::new();
 
@@ -117,7 +122,7 @@ pub extern "C" fn wd_init(data_dir: *const c_char) -> *mut Context {
 }
 
 #[no_mangle]
-pub extern "C" fn wd_dispose(ctx: *mut Context) {
+pub unsafe extern "C" fn wd_dispose(ctx: *mut Context) {
     if !ctx.is_null() {
         unsafe {
             let _ = std::boxed::Box::from_raw(ctx);
@@ -147,21 +152,21 @@ pub unsafe extern "C" fn wd_free_string(ptr: *mut c_char) {
 // ---------------------------------------------------------------------------
 
 #[no_mangle]
-pub extern "C" fn wd_get_boxes(ctx: *mut Context) -> *mut c_char {
+pub unsafe extern "C" fn wd_get_boxes(ctx: *mut Context) -> *mut c_char {
     ffi_catch(|| {
         let ctx = match unsafe { ctx.as_ref() } {
             Some(c) => c,
             None => return ffi_err("null context"),
         };
         match ctx.drawer.get_boxes() {
-            Ok(boxes) => ffi_ok(boxes),
+            Ok(boxes) => ffi_ok(boxes.iter().map(FfiBox::from).collect::<Vec<_>>()),
             Err(e) => ffi_err(&e.message),
         }
     })
 }
 
 #[no_mangle]
-pub extern "C" fn wd_create_box(
+pub unsafe extern "C" fn wd_create_box(
     ctx: *mut Context,
     name: *const c_char,
     box_type: i32,
@@ -180,14 +185,14 @@ pub extern "C" fn wd_create_box(
             None => return ffi_err("invalid box type"),
         };
         match ctx.drawer.create_box(&name, bt) {
-            Ok(b) => ffi_ok(b),
+            Ok(b) => ffi_ok(FfiBox::from(&b)),
             Err(e) => ffi_err(&e.message),
         }
     })
 }
 
 #[no_mangle]
-pub extern "C" fn wd_update_box_name(
+pub unsafe extern "C" fn wd_update_box_name(
     ctx: *mut Context,
     box_id: *const c_char,
     new_name: *const c_char,
@@ -217,7 +222,7 @@ pub extern "C" fn wd_update_box_name(
 }
 
 #[no_mangle]
-pub extern "C" fn wd_reorder_boxes(
+pub unsafe extern "C" fn wd_reorder_boxes(
     ctx: *mut Context,
     json_array_of_ids: *const c_char,
 ) -> *mut c_char {
@@ -246,7 +251,7 @@ pub extern "C" fn wd_reorder_boxes(
 }
 
 #[no_mangle]
-pub extern "C" fn wd_delete_box(ctx: *mut Context, box_id: *const c_char) -> *mut c_char {
+pub unsafe extern "C" fn wd_delete_box(ctx: *mut Context, box_id: *const c_char) -> *mut c_char {
     ffi_catch(|| {
         let ctx = match unsafe { ctx.as_ref() } {
             Some(c) => c,
@@ -272,7 +277,7 @@ pub extern "C" fn wd_delete_box(ctx: *mut Context, box_id: *const c_char) -> *mu
 // ---------------------------------------------------------------------------
 
 #[no_mangle]
-pub extern "C" fn wd_get_items(
+pub unsafe extern "C" fn wd_get_items(
     ctx: *mut Context,
     box_id_or_null: *const c_char,
 ) -> *mut c_char {
@@ -302,14 +307,14 @@ pub extern "C" fn wd_get_items(
             None => ctx.drawer.get_all_items(),
         };
         match result {
-            Ok(items) => ffi_ok(items),
+            Ok(items) => ffi_ok(items.iter().map(FfiDrawerItem::from).collect::<Vec<_>>()),
             Err(e) => ffi_err(&e.message),
         }
     })
 }
 
 #[no_mangle]
-pub extern "C" fn wd_search_items(ctx: *mut Context, query: *const c_char) -> *mut c_char {
+pub unsafe extern "C" fn wd_search_items(ctx: *mut Context, query: *const c_char) -> *mut c_char {
     ffi_catch(|| {
         let ctx = match unsafe { ctx.as_ref() } {
             Some(c) => c,
@@ -320,14 +325,14 @@ pub extern "C" fn wd_search_items(ctx: *mut Context, query: *const c_char) -> *m
             None => return ffi_err("invalid query"),
         };
         match ctx.drawer.search_items(&q, 200) {
-            Ok(items) => ffi_ok(items),
+            Ok(items) => ffi_ok(items.iter().map(FfiDrawerItem::from).collect::<Vec<_>>()),
             Err(e) => ffi_err(&e.message),
         }
     })
 }
 
 #[no_mangle]
-pub extern "C" fn wd_import_path(
+pub unsafe extern "C" fn wd_import_path(
     ctx: *mut Context,
     box_id: *const c_char,
     source_path: *const c_char,
@@ -354,14 +359,14 @@ pub extern "C" fn wd_import_path(
         let col = if grid_col < 0 { None } else { Some(grid_col) };
         let row = if grid_row < 0 { None } else { Some(grid_row) };
         match ctx.drawer.import_path(id, &path, col, row) {
-            Ok(item) => ffi_ok(item),
+            Ok(item) => ffi_ok(FfiDrawerItem::from(&item)),
             Err(e) => ffi_err(&e.message),
         }
     })
 }
 
 #[no_mangle]
-pub extern "C" fn wd_move_item_to_box(
+pub unsafe extern "C" fn wd_move_item_to_box(
     ctx: *mut Context,
     item_id: *const c_char,
     target_box_id: *const c_char,
@@ -391,7 +396,10 @@ pub extern "C" fn wd_move_item_to_box(
         };
         let col = if grid_col < 0 { None } else { Some(grid_col) };
         let row = if grid_row < 0 { None } else { Some(grid_row) };
-        match ctx.drawer.move_item_to_box(item_uuid, target_uuid, col, row) {
+        match ctx
+            .drawer
+            .move_item_to_box(item_uuid, target_uuid, col, row)
+        {
             Ok(()) => ffi_ok(serde_json::Value::Null),
             Err(e) => ffi_err(&e.message),
         }
@@ -399,7 +407,7 @@ pub extern "C" fn wd_move_item_to_box(
 }
 
 #[no_mangle]
-pub extern "C" fn wd_delete_item(ctx: *mut Context, item_id: *const c_char) -> *mut c_char {
+pub unsafe extern "C" fn wd_delete_item(ctx: *mut Context, item_id: *const c_char) -> *mut c_char {
     ffi_catch(|| {
         let ctx = match unsafe { ctx.as_ref() } {
             Some(c) => c,
@@ -421,7 +429,7 @@ pub extern "C" fn wd_delete_item(ctx: *mut Context, item_id: *const c_char) -> *
 }
 
 #[no_mangle]
-pub extern "C" fn wd_export_item(
+pub unsafe extern "C" fn wd_export_item(
     ctx: *mut Context,
     item_id: *const c_char,
     target_dir: *const c_char,
@@ -451,7 +459,7 @@ pub extern "C" fn wd_export_item(
 }
 
 #[no_mangle]
-pub extern "C" fn wd_update_grid_pos(
+pub unsafe extern "C" fn wd_update_grid_pos(
     ctx: *mut Context,
     item_id: *const c_char,
     grid_col: i32,
@@ -484,7 +492,7 @@ pub extern "C" fn wd_update_grid_pos(
 // ---------------------------------------------------------------------------
 
 #[no_mangle]
-pub extern "C" fn wd_get_todos(ctx: *mut Context, box_id: *const c_char) -> *mut c_char {
+pub unsafe extern "C" fn wd_get_todos(ctx: *mut Context, box_id: *const c_char) -> *mut c_char {
     ffi_catch(|| {
         let ctx = match unsafe { ctx.as_ref() } {
             Some(c) => c,
@@ -499,14 +507,14 @@ pub extern "C" fn wd_get_todos(ctx: *mut Context, box_id: *const c_char) -> *mut
             Err(e) => return ffi_err(&e.message),
         };
         match ctx.todo.get_todos(id) {
-            Ok(todos) => ffi_ok(todos),
+            Ok(todos) => ffi_ok(todos.iter().map(FfiTodoItem::from).collect::<Vec<_>>()),
             Err(e) => ffi_err(&e.message),
         }
     })
 }
 
 #[no_mangle]
-pub extern "C" fn wd_add_todo(
+pub unsafe extern "C" fn wd_add_todo(
     ctx: *mut Context,
     box_id: *const c_char,
     title: *const c_char,
@@ -529,14 +537,14 @@ pub extern "C" fn wd_add_todo(
             None => return ffi_err("invalid title"),
         };
         match ctx.todo.add_todo(id, &t) {
-            Ok(todo) => ffi_ok(todo),
+            Ok(todo) => ffi_ok(FfiTodoItem::from(&todo)),
             Err(e) => ffi_err(&e.message),
         }
     })
 }
 
 #[no_mangle]
-pub extern "C" fn wd_set_todo_completed(
+pub unsafe extern "C" fn wd_set_todo_completed(
     ctx: *mut Context,
     todo_id: *const c_char,
     is_completed: i32,
@@ -556,14 +564,14 @@ pub extern "C" fn wd_set_todo_completed(
         };
         let completed = is_completed != 0;
         match ctx.todo.set_completed(id, completed) {
-            Ok(todo) => ffi_ok(todo),
+            Ok(todo) => ffi_ok(FfiTodoItem::from(&todo)),
             Err(e) => ffi_err(&e.message),
         }
     })
 }
 
 #[no_mangle]
-pub extern "C" fn wd_delete_todo(ctx: *mut Context, todo_id: *const c_char) -> *mut c_char {
+pub unsafe extern "C" fn wd_delete_todo(ctx: *mut Context, todo_id: *const c_char) -> *mut c_char {
     ffi_catch(|| {
         let ctx = match unsafe { ctx.as_ref() } {
             Some(c) => c,
@@ -585,7 +593,7 @@ pub extern "C" fn wd_delete_todo(ctx: *mut Context, todo_id: *const c_char) -> *
 }
 
 #[no_mangle]
-pub extern "C" fn wd_archive_completed(
+pub unsafe extern "C" fn wd_archive_completed(
     ctx: *mut Context,
     box_id: *const c_char,
 ) -> *mut c_char {
@@ -610,7 +618,7 @@ pub extern "C" fn wd_archive_completed(
 }
 
 #[no_mangle]
-pub extern "C" fn wd_restore_archived(
+pub unsafe extern "C" fn wd_restore_archived(
     ctx: *mut Context,
     todo_id: *const c_char,
 ) -> *mut c_char {
@@ -628,7 +636,7 @@ pub extern "C" fn wd_restore_archived(
             Err(e) => return ffi_err(&e.message),
         };
         match ctx.todo.restore_archived(id) {
-            Ok(todo) => ffi_ok(todo),
+            Ok(todo) => ffi_ok(FfiTodoItem::from(&todo)),
             Err(e) => ffi_err(&e.message),
         }
     })
@@ -639,7 +647,7 @@ pub extern "C" fn wd_restore_archived(
 // ---------------------------------------------------------------------------
 
 #[no_mangle]
-pub extern "C" fn wd_check_update(
+pub unsafe extern "C" fn wd_check_update(
     ctx: *mut Context,
     current_version: *const c_char,
 ) -> *mut c_char {
@@ -648,8 +656,7 @@ pub extern "C" fn wd_check_update(
             Some(c) => c,
             None => return ffi_err("null context"),
         };
-        let ver = unsafe { cstr_to_string(current_version) }
-            .unwrap_or_else(|| "0.0.0".to_string());
+        let ver = unsafe { cstr_to_string(current_version) }.unwrap_or_else(|| "0.0.0".to_string());
         let rt = tokio::runtime::Runtime::new().unwrap();
         match rt.block_on(ctx.update.check_for_update(&ver)) {
             Ok(result) => ffi_ok(result),
@@ -687,7 +694,68 @@ mod tests {
         assert!(!ctx.is_null());
         unsafe { wd_dispose(ctx) };
         // Free the leaked CString
-        unsafe { let _ = CString::from_raw(data_dir as *mut c_char); }
+        unsafe {
+            let _ = CString::from_raw(data_dir as *mut c_char);
+        }
+    }
+
+    #[test]
+    fn init_creates_schema_and_returns_box_dtos() {
+        let dir = tempfile::tempdir().unwrap();
+        let data_dir = CString::new(dir.path().to_str().unwrap()).unwrap();
+        let ctx = unsafe { wd_init(data_dir.as_ptr()) };
+        assert!(!ctx.is_null());
+
+        let json = unsafe { read_and_free(wd_get_boxes(ctx)) };
+        let response: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(response["ok"], true);
+        let boxes = response["data"].as_array().unwrap();
+        assert_eq!(boxes.len(), 2);
+        assert!(boxes[0]["type"].is_number());
+        assert!(boxes[0].get("box_type").is_none());
+
+        unsafe { wd_dispose(ctx) };
+    }
+
+    #[test]
+    fn import_returns_drawer_item_dto() {
+        let dir = tempfile::tempdir().unwrap();
+        let data_dir = CString::new(dir.path().join("data").to_str().unwrap()).unwrap();
+        let ctx = unsafe { wd_init(data_dir.as_ptr()) };
+        assert!(!ctx.is_null());
+
+        let boxes_json = unsafe { read_and_free(wd_get_boxes(ctx)) };
+        let boxes_response: serde_json::Value = serde_json::from_str(&boxes_json).unwrap();
+        let normal_box_id = boxes_response["data"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|b| b["type"] == 0)
+            .unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        let source_path = dir.path().join("source.txt");
+        std::fs::write(&source_path, "data").unwrap();
+        let box_id = CString::new(normal_box_id).unwrap();
+        let source = CString::new(source_path.to_str().unwrap()).unwrap();
+        let json = unsafe {
+            read_and_free(wd_import_path(
+                ctx,
+                box_id.as_ptr(),
+                source.as_ptr(),
+                -1,
+                -1,
+            ))
+        };
+        let response: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(response["ok"], true);
+        assert!(response["data"]["item_kind"].is_number());
+
+        unsafe { wd_dispose(ctx) };
     }
 
     #[test]
@@ -711,26 +779,34 @@ mod tests {
         assert!(json.contains("invalid box type"));
 
         unsafe { wd_dispose(ctx) };
-        unsafe { let _ = CString::from_raw(data_dir as *mut c_char); }
-        unsafe { let _ = CString::from_raw(name as *mut c_char); }
+        unsafe {
+            let _ = CString::from_raw(data_dir as *mut c_char);
+        }
+        unsafe {
+            let _ = CString::from_raw(name as *mut c_char);
+        }
     }
 
     #[test]
     fn test_free_string_null() {
         // Should not panic
-        unsafe { wd_free_string(std::ptr::null_mut()); }
+        unsafe {
+            wd_free_string(std::ptr::null_mut());
+        }
     }
 
     #[test]
     fn test_get_todos_null_context() {
-        let result = unsafe { wd_get_todos(std::ptr::null_mut(), make_cstr("fake-id")) };
+        let box_id = CString::new("fake-id").unwrap();
+        let result = unsafe { wd_get_todos(std::ptr::null_mut(), box_id.as_ptr()) };
         let json = unsafe { read_and_free(result) };
         assert!(json.contains("\"ok\":false"));
     }
 
     #[test]
     fn test_check_update_null_context() {
-        let result = unsafe { wd_check_update(std::ptr::null_mut(), make_cstr("1.0.0")) };
+        let version = CString::new("1.0.0").unwrap();
+        let result = unsafe { wd_check_update(std::ptr::null_mut(), version.as_ptr()) };
         let json = unsafe { read_and_free(result) };
         assert!(json.contains("\"ok\":false"));
     }

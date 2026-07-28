@@ -2,89 +2,134 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using WitchDrawer.Core.Models;
+using WitchDrawer.Core.Services;
 
-namespace WitchDrawer.Core.Services;
+namespace WitchDrawer.RustBridge;
 
 /// <summary>
 /// Low-level P/Invoke declarations for the Rust native library (witchdrawer_core.dll).
 /// All methods use Cdecl calling convention and UTF-8 string marshalling.
 /// </summary>
-public static class RustCore
+internal static class RustCore
 {
     internal const string DllName = "witchdrawer_core.dll";
 
     // ── Native declarations ──────────────────────────────────────────────
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    internal static extern IntPtr wd_init(byte[] dataDir);
+    internal static extern IntPtr wd_init([MarshalAs(UnmanagedType.LPUTF8Str)] string dataDir);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
     internal static extern void wd_dispose(IntPtr ctx);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    internal static extern IntPtr wd_get_boxes(IntPtr ctx);
+    internal static extern IntPtr wd_get_boxes(RustContextHandle ctx);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    internal static extern IntPtr wd_create_box(IntPtr ctx, byte[] name, int boxType);
+    internal static extern IntPtr wd_create_box(
+        RustContextHandle ctx,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string name,
+        int boxType);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    internal static extern IntPtr wd_update_box_name(IntPtr ctx, byte[] boxId, byte[] newName);
+    internal static extern IntPtr wd_update_box_name(
+        RustContextHandle ctx,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string boxId,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string newName);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    internal static extern IntPtr wd_reorder_boxes(IntPtr ctx, byte[] jsonArrayOfIds);
+    internal static extern IntPtr wd_reorder_boxes(
+        RustContextHandle ctx,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string jsonArrayOfIds);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    internal static extern IntPtr wd_delete_box(IntPtr ctx, byte[] boxId);
+    internal static extern IntPtr wd_delete_box(
+        RustContextHandle ctx,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string boxId);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    internal static extern IntPtr wd_get_items(IntPtr ctx, IntPtr boxIdOrNull);
+    internal static extern IntPtr wd_get_items(RustContextHandle ctx, IntPtr boxIdOrNull);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    internal static extern IntPtr wd_search_items(IntPtr ctx, byte[] query);
+    internal static extern IntPtr wd_search_items(
+        RustContextHandle ctx,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string query);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    internal static extern IntPtr wd_import_path(IntPtr ctx, byte[] boxId, byte[] sourcePath, int gridCol, int gridRow);
+    internal static extern IntPtr wd_import_path(
+        RustContextHandle ctx,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string boxId,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string sourcePath,
+        int gridCol,
+        int gridRow);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    internal static extern IntPtr wd_move_item_to_box(IntPtr ctx, byte[] itemId, byte[] targetBoxId, int gridCol, int gridRow);
+    internal static extern IntPtr wd_move_item_to_box(
+        RustContextHandle ctx,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string itemId,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string targetBoxId,
+        int gridCol,
+        int gridRow);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    internal static extern IntPtr wd_delete_item(IntPtr ctx, byte[] itemId);
+    internal static extern IntPtr wd_delete_item(
+        RustContextHandle ctx,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string itemId);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    internal static extern IntPtr wd_export_item(IntPtr ctx, byte[] itemId, byte[] targetDir);
+    internal static extern IntPtr wd_export_item(
+        RustContextHandle ctx,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string itemId,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string targetDir);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    internal static extern IntPtr wd_update_grid_pos(IntPtr ctx, byte[] itemId, int gridCol, int gridRow);
+    internal static extern IntPtr wd_update_grid_pos(
+        RustContextHandle ctx,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string itemId,
+        int gridCol,
+        int gridRow);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    internal static extern IntPtr wd_get_todos(IntPtr ctx, byte[] boxId);
+    internal static extern IntPtr wd_get_todos(
+        RustContextHandle ctx,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string boxId);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    internal static extern IntPtr wd_add_todo(IntPtr ctx, byte[] boxId, byte[] title);
+    internal static extern IntPtr wd_add_todo(
+        RustContextHandle ctx,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string boxId,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string title);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    internal static extern IntPtr wd_set_todo_completed(IntPtr ctx, byte[] todoId, int isCompleted);
+    internal static extern IntPtr wd_set_todo_completed(
+        RustContextHandle ctx,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string todoId,
+        int isCompleted);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    internal static extern IntPtr wd_delete_todo(IntPtr ctx, byte[] todoId);
+    internal static extern IntPtr wd_delete_todo(
+        RustContextHandle ctx,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string todoId);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    internal static extern IntPtr wd_archive_completed(IntPtr ctx, byte[] boxId);
+    internal static extern IntPtr wd_archive_completed(
+        RustContextHandle ctx,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string boxId);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    internal static extern IntPtr wd_restore_archived(IntPtr ctx, byte[] todoId);
+    internal static extern IntPtr wd_restore_archived(
+        RustContextHandle ctx,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string todoId);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
-    internal static extern IntPtr wd_check_update(IntPtr ctx, byte[] currentVersion);
+    internal static extern IntPtr wd_check_update(
+        RustContextHandle ctx,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string currentVersion);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
     internal static extern void wd_free_string(IntPtr ptr);
 
     // ── Helpers ──────────────────────────────────────────────────────────
-
-    /// <summary>Convert a managed string to a UTF-8 byte array for P/Invoke.</summary>
-    internal static byte[] ToUtf8(string s) => System.Text.Encoding.UTF8.GetBytes(s);
 
     /// <summary>Read a returned C string and free it, then deserialize the JSON FfiResponse.</summary>
     internal static T Call<T>(Func<IntPtr> nativeCall)
@@ -123,9 +168,15 @@ public static class RustCore
             throw new InvalidOperationException("Rust returned a null pointer");
         }
 
-        var result = Marshal.PtrToStringUTF8(ptr) ?? throw new InvalidOperationException("Rust returned null string");
-        wd_free_string(ptr);
-        return result;
+        try
+        {
+            return Marshal.PtrToStringUTF8(ptr)
+                ?? throw new InvalidOperationException("Rust returned null string");
+        }
+        finally
+        {
+            wd_free_string(ptr);
+        }
     }
 
     // ── FFI response model ───────────────────────────────────────────────
@@ -368,29 +419,56 @@ public static class RustCore
     }
 }
 
+internal sealed class RustContextHandle : SafeHandle
+{
+    internal RustContextHandle(IntPtr handle)
+        : base(IntPtr.Zero, ownsHandle: true)
+    {
+        SetHandle(handle);
+    }
+
+    public override bool IsInvalid => handle == IntPtr.Zero;
+
+    protected override bool ReleaseHandle()
+    {
+        RustCore.wd_dispose(handle);
+        return true;
+    }
+}
+
 // ============================================================================
-// RustDrawerService – drop-in alternative for DrawerService
+// RustDrawerService – synchronous experimental adapter
 // ============================================================================
 
 /// <summary>
 /// Wraps the Rust native DrawerService via P/Invoke.
-/// Mirrors the public API of <see cref="DrawerService"/> so the WPF app can swap between them.
+/// Exposes the implemented Rust drawer operations for integration testing.
+/// It is not API-compatible with the production asynchronous <see cref="DrawerService"/>.
 /// </summary>
 public sealed class RustDrawerService : IDisposable
 {
-    private readonly IntPtr _ctx;
-    private bool _disposed;
+    private readonly RustContextHandle _ctx;
 
     /// <summary>
     /// Create the native context. Must call <see cref="Dispose"/> when done.
     /// </summary>
     public RustDrawerService(string dataDirectory)
     {
-        var dirBytes = System.Text.Encoding.UTF8.GetBytes(dataDirectory);
-        _ctx = RustCore.wd_init(dirBytes);
-        if (_ctx == IntPtr.Zero)
+        var context = RustCore.wd_init(dataDirectory);
+        if (context == IntPtr.Zero)
         {
             throw new InvalidOperationException("Failed to initialize Rust core");
+        }
+
+        _ctx = new RustContextHandle(context);
+    }
+
+    internal RustContextHandle Context
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(_ctx.IsClosed, this);
+            return _ctx;
         }
     }
 
@@ -398,36 +476,34 @@ public sealed class RustDrawerService : IDisposable
 
     public IReadOnlyList<Box> GetBoxes()
     {
-        var list = RustCore.Call<List<RustCore.FfiBoxDto>>(() => RustCore.wd_get_boxes(_ctx));
+        var list = RustCore.Call<List<RustCore.FfiBoxDto>>(() => RustCore.wd_get_boxes(Context));
         return list.Select(dto => dto.ToModel()).ToList();
     }
 
     public Box CreateBox(string name, BoxType type)
     {
         var dto = RustCore.Call<RustCore.FfiBoxDto>(() =>
-            RustCore.wd_create_box(_ctx, System.Text.Encoding.UTF8.GetBytes(name), (int)type));
+            RustCore.wd_create_box(Context, name, (int)type));
         return dto.ToModel();
     }
 
     public void RenameBox(Guid boxId, string newName)
     {
         RustCore.CallVoid(() =>
-            RustCore.wd_update_box_name(_ctx,
-                System.Text.Encoding.UTF8.GetBytes(boxId.ToString()),
-                System.Text.Encoding.UTF8.GetBytes(newName)));
+            RustCore.wd_update_box_name(Context, boxId.ToString(), newName));
     }
 
     public void ReorderBoxes(IReadOnlyList<Guid> orderedBoxIds)
     {
         var json = JsonSerializer.Serialize(orderedBoxIds.Select(id => id.ToString()));
         RustCore.CallVoid(() =>
-            RustCore.wd_reorder_boxes(_ctx, System.Text.Encoding.UTF8.GetBytes(json)));
+            RustCore.wd_reorder_boxes(Context, json));
     }
 
     public BoxDeleteResult DeleteBox(Guid boxId)
     {
         var dto = RustCore.Call<RustCore.FfiBoxDeleteResultDto>(() =>
-            RustCore.wd_delete_box(_ctx, System.Text.Encoding.UTF8.GetBytes(boxId.ToString())));
+            RustCore.wd_delete_box(Context, boxId.ToString()));
         return dto.ToModel();
     }
 
@@ -438,7 +514,7 @@ public sealed class RustDrawerService : IDisposable
         var ptr = Marshal.StringToCoTaskMemUTF8(boxId.ToString());
         try
         {
-            var list = RustCore.Call<List<RustCore.FfiDrawerItemDto>>(() => RustCore.wd_get_items(_ctx, ptr));
+            var list = RustCore.Call<List<RustCore.FfiDrawerItemDto>>(() => RustCore.wd_get_items(Context, ptr));
             return list.Select(dto => dto.ToModel()).ToList();
         }
         finally
@@ -449,14 +525,14 @@ public sealed class RustDrawerService : IDisposable
 
     public IReadOnlyList<DrawerItem> GetAllItems()
     {
-        var list = RustCore.Call<List<RustCore.FfiDrawerItemDto>>(() => RustCore.wd_get_items(_ctx, IntPtr.Zero));
+        var list = RustCore.Call<List<RustCore.FfiDrawerItemDto>>(() => RustCore.wd_get_items(Context, IntPtr.Zero));
         return list.Select(dto => dto.ToModel()).ToList();
     }
 
     public IReadOnlyList<DrawerItem> SearchItems(string query, int limit = 200)
     {
         var list = RustCore.Call<List<RustCore.FfiDrawerItemDto>>(() =>
-            RustCore.wd_search_items(_ctx, System.Text.Encoding.UTF8.GetBytes(query)));
+            RustCore.wd_search_items(Context, query));
         // Limit is applied on the C# side; the Rust side returns all matches.
         return list.Take(limit).Select(dto => dto.ToModel()).ToList();
     }
@@ -464,9 +540,9 @@ public sealed class RustDrawerService : IDisposable
     public DrawerItem ImportPath(Guid boxId, string sourcePath, int? gridColumn = null, int? gridRow = null)
     {
         var dto = RustCore.Call<RustCore.FfiDrawerItemDto>(() =>
-            RustCore.wd_import_path(_ctx,
-                System.Text.Encoding.UTF8.GetBytes(boxId.ToString()),
-                System.Text.Encoding.UTF8.GetBytes(sourcePath),
+            RustCore.wd_import_path(Context,
+                boxId.ToString(),
+                sourcePath,
                 gridColumn ?? -1,
                 gridRow ?? -1));
         return dto.ToModel();
@@ -475,9 +551,9 @@ public sealed class RustDrawerService : IDisposable
     public void MoveItemToBox(Guid itemId, Guid targetBoxId, int? gridColumn = null, int? gridRow = null)
     {
         RustCore.CallVoid(() =>
-            RustCore.wd_move_item_to_box(_ctx,
-                System.Text.Encoding.UTF8.GetBytes(itemId.ToString()),
-                System.Text.Encoding.UTF8.GetBytes(targetBoxId.ToString()),
+            RustCore.wd_move_item_to_box(Context,
+                itemId.ToString(),
+                targetBoxId.ToString(),
                 gridColumn ?? -1,
                 gridRow ?? -1));
     }
@@ -485,38 +561,29 @@ public sealed class RustDrawerService : IDisposable
     public ItemDeleteResult DeleteItem(Guid itemId)
     {
         var dto = RustCore.Call<RustCore.FfiItemDeleteResultDto>(() =>
-            RustCore.wd_delete_item(_ctx, System.Text.Encoding.UTF8.GetBytes(itemId.ToString())));
+            RustCore.wd_delete_item(Context, itemId.ToString()));
         return dto.ToModel();
     }
 
     public string ExportItemToDirectory(Guid itemId, string targetDirectory)
     {
         return RustCore.Call<string>(() =>
-            RustCore.wd_export_item(_ctx,
-                System.Text.Encoding.UTF8.GetBytes(itemId.ToString()),
-                System.Text.Encoding.UTF8.GetBytes(targetDirectory)));
+            RustCore.wd_export_item(Context, itemId.ToString(), targetDirectory));
     }
 
     public void UpdateItemGridPosition(Guid itemId, int? gridColumn, int? gridRow)
     {
         RustCore.CallVoid(() =>
-            RustCore.wd_update_grid_pos(_ctx,
-                System.Text.Encoding.UTF8.GetBytes(itemId.ToString()),
+            RustCore.wd_update_grid_pos(Context,
+                itemId.ToString(),
                 gridColumn ?? -1,
                 gridRow ?? -1));
     }
 
     public void Dispose()
     {
-        if (!_disposed)
-        {
-            RustCore.wd_dispose(_ctx);
-            _disposed = true;
-        }
-        GC.SuppressFinalize(this);
+        _ctx.Dispose();
     }
-
-    ~RustDrawerService() => Dispose();
 }
 
 // ============================================================================
@@ -529,37 +596,35 @@ public sealed class RustDrawerService : IDisposable
 /// </summary>
 public sealed class RustTodoService
 {
-    private readonly IntPtr _ctx;
+    private readonly RustDrawerService _owner;
 
     /// <summary>
-    /// The Rust context must outlive this service. Pass the same context used by <see cref="RustDrawerService"/>.
+    /// Keeps the owning drawer service alive and shares its native context.
     /// </summary>
-    public RustTodoService(IntPtr ctx)
+    public RustTodoService(RustDrawerService owner)
     {
-        _ctx = ctx;
+        _owner = owner;
     }
 
     public IReadOnlyList<TodoItem> GetTodos(Guid boxId)
     {
         var list = RustCore.Call<List<RustCore.FfiTodoItemDto>>(() =>
-            RustCore.wd_get_todos(_ctx, System.Text.Encoding.UTF8.GetBytes(boxId.ToString())));
+            RustCore.wd_get_todos(_owner.Context, boxId.ToString()));
         return list.Select(dto => dto.ToModel()).ToList();
     }
 
     public TodoItem AddTodo(Guid boxId, string title)
     {
         var dto = RustCore.Call<RustCore.FfiTodoItemDto>(() =>
-            RustCore.wd_add_todo(_ctx,
-                System.Text.Encoding.UTF8.GetBytes(boxId.ToString()),
-                System.Text.Encoding.UTF8.GetBytes(title)));
+            RustCore.wd_add_todo(_owner.Context, boxId.ToString(), title));
         return dto.ToModel();
     }
 
     public TodoItem SetCompleted(Guid todoId, bool isCompleted)
     {
         var dto = RustCore.Call<RustCore.FfiTodoItemDto>(() =>
-            RustCore.wd_set_todo_completed(_ctx,
-                System.Text.Encoding.UTF8.GetBytes(todoId.ToString()),
+            RustCore.wd_set_todo_completed(_owner.Context,
+                todoId.ToString(),
                 isCompleted ? 1 : 0));
         return dto.ToModel();
     }
@@ -567,19 +632,19 @@ public sealed class RustTodoService
     public void DeleteTodo(Guid todoId)
     {
         RustCore.CallVoid(() =>
-            RustCore.wd_delete_todo(_ctx, System.Text.Encoding.UTF8.GetBytes(todoId.ToString())));
+            RustCore.wd_delete_todo(_owner.Context, todoId.ToString()));
     }
 
     public int ArchiveCompleted(Guid boxId)
     {
         return RustCore.Call<int>(() =>
-            RustCore.wd_archive_completed(_ctx, System.Text.Encoding.UTF8.GetBytes(boxId.ToString())));
+            RustCore.wd_archive_completed(_owner.Context, boxId.ToString()));
     }
 
     public TodoItem RestoreArchived(Guid todoId)
     {
         var dto = RustCore.Call<RustCore.FfiTodoItemDto>(() =>
-            RustCore.wd_restore_archived(_ctx, System.Text.Encoding.UTF8.GetBytes(todoId.ToString())));
+            RustCore.wd_restore_archived(_owner.Context, todoId.ToString()));
         return dto.ToModel();
     }
 }
@@ -594,21 +659,20 @@ public sealed class RustTodoService
 /// </summary>
 public sealed class RustUpdateService
 {
-    private readonly IntPtr _ctx;
+    private readonly RustDrawerService _owner;
 
     /// <summary>
-    /// The Rust context must outlive this service. Pass the same context used by <see cref="RustDrawerService"/>.
+    /// Keeps the owning drawer service alive and shares its native context.
     /// </summary>
-    public RustUpdateService(IntPtr ctx)
+    public RustUpdateService(RustDrawerService owner)
     {
-        _ctx = ctx;
+        _owner = owner;
     }
 
     public UpdateCheckResult CheckForUpdate(Version currentVersion)
     {
         var dto = RustCore.Call<RustCore.FfiUpdateCheckResultDto>(() =>
-            RustCore.wd_check_update(_ctx,
-                System.Text.Encoding.UTF8.GetBytes(currentVersion.ToString())));
+            RustCore.wd_check_update(_owner.Context, currentVersion.ToString()));
         return dto.ToModel();
     }
 }

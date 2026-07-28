@@ -3,9 +3,7 @@
 use chrono::Utc;
 use uuid::Uuid;
 
-use crate::models::{
-    AppError, AppResult, BoxType, TodoItem,
-};
+use crate::models::{AppError, AppResult, BoxType, TodoItem};
 use crate::storage::DrawerRepository;
 
 /// Maximum allowed title length (characters).
@@ -26,10 +24,7 @@ impl TodoService {
         self.repository.get_todos(box_id)
     }
 
-    pub fn get_archived_todos(
-        &self,
-        box_id: Option<Uuid>,
-    ) -> AppResult<Vec<TodoItem>> {
+    pub fn get_archived_todos(&self, box_id: Option<Uuid>) -> AppResult<Vec<TodoItem>> {
         self.repository.get_archived_todos(box_id)
     }
 
@@ -72,11 +67,7 @@ impl TodoService {
         Ok(todo)
     }
 
-    pub fn set_completed(
-        &self,
-        todo_id: Uuid,
-        is_completed: bool,
-    ) -> AppResult<TodoItem> {
+    pub fn set_completed(&self, todo_id: Uuid, is_completed: bool) -> AppResult<TodoItem> {
         let existing = self
             .repository
             .get_todo(todo_id)?
@@ -93,12 +84,8 @@ impl TodoService {
         let now = Utc::now();
         let completed_at = if is_completed { Some(now) } else { None };
 
-        self.repository.update_todo_completion(
-            todo_id,
-            is_completed,
-            completed_at,
-            now,
-        )?;
+        self.repository
+            .update_todo_completion(todo_id, is_completed, completed_at, now)?;
 
         Ok(TodoItem {
             is_completed,
@@ -128,8 +115,7 @@ impl TodoService {
             ));
         }
 
-        self.repository
-            .archive_completed_todos(box_id, Utc::now())
+        self.repository.archive_completed_todos(box_id, Utc::now())
     }
 
     pub fn restore_archived(&self, todo_id: Uuid) -> AppResult<TodoItem> {
@@ -147,12 +133,8 @@ impl TodoService {
         }
 
         let now = Utc::now();
-        self.repository.update_todo_archive_state(
-            todo_id,
-            false,
-            None,
-            now,
-        )?;
+        self.repository
+            .update_todo_archive_state(todo_id, false, None, now)?;
 
         Ok(TodoItem {
             is_archived: false,

@@ -3,17 +3,29 @@
     <TargetFramework>net10.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <PlatformTarget>x64</PlatformTarget>
+    <RustManifestPath>$(MSBuildThisFileDirectory)..\..\rust\witchdrawer-core\Cargo.toml</RustManifestPath>
+    <RustDllPath>$(MSBuildThisFileDirectory)..\..\rust\witchdrawer-core\target\release\witchdrawer_core.dll</RustDllPath>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\WitchDrawer.Core\WitchDrawer.Core.csproj" />
   </ItemGroup>
 
-  <!-- Auto-build Rust DLL before compiling -->
-  <Target Name="BuildRustCore" BeforeTargets="BeforeBuild" Condition="'$(SkipRustBuild)' != 'true'">
-    <Exec Command="cargo build --release --manifest-path=$(MSBuildThisFileDirectory)..\..\rust\witchdrawer-core\Cargo.toml" />
-    <Copy SourceFiles="$(MSBuildThisFileDirectory)..\..\rust\witchdrawer-core\target\release\witchdrawer_core.dll"
-          DestinationFolder="$(OutputPath)"
-          SkipUnchangedFiles="true" />
+  <ItemGroup>
+    <Content Include="$(RustDllPath)"
+             Link="witchdrawer_core.dll"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- Build the native implementation before MSBuild copies runtime assets. -->
+  <Target Name="BuildRustCore" BeforeTargets="PrepareForBuild" Condition="'$(SkipRustBuild)' != 'true'">
+    <Exec Command="cargo build --release --manifest-path=&quot;$(RustManifestPath)&quot;" />
+  </Target>
+
+  <Target Name="ValidateRustCore" BeforeTargets="CopyFilesToOutputDirectory">
+    <Error Condition="!Exists('$(RustDllPath)')"
+           Text="Rust core DLL was not found. Build it with cargo or omit SkipRustBuild." />
   </Target>
 </Project>

@@ -12,7 +12,7 @@ use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, OpenFlags};
 use uuid::Uuid;
 
-use crate::models::{AppError, AppResult, DrawerBox, BoxType, DrawerItem, ItemKind, TodoItem};
+use crate::models::{AppError, AppResult, BoxType, DrawerBox, DrawerItem, ItemKind, TodoItem};
 
 // ── datetime helpers ────────────────────────────────────────
 
@@ -25,7 +25,9 @@ fn to_db(dt: DateTime<Utc>) -> String {
 fn parse_dt(s: &str) -> Result<DateTime<Utc>, rusqlite::Error> {
     DateTime::parse_from_rfc3339(s)
         .map(|dt| dt.with_timezone(&Utc))
-        .map_err(|e| rusqlite::Error::InvalidParameterName(format!("Invalid datetime '{}': {}", s, e)))
+        .map_err(|e| {
+            rusqlite::Error::InvalidParameterName(format!("Invalid datetime '{}': {}", s, e))
+        })
 }
 
 /// Parse a UUID string from SQLite.
@@ -50,10 +52,9 @@ fn read_box(row: &rusqlite::Row) -> rusqlite::Result<DrawerBox> {
     Ok(DrawerBox {
         id: parse_uuid(&id_str)?,
         name,
-        box_type: BoxType::from_i32(type_int)
-            .ok_or_else(|| rusqlite::Error::InvalidParameterName(
-                format!("Unknown BoxType value: {}", type_int),
-            ))?,
+        box_type: BoxType::from_i32(type_int).ok_or_else(|| {
+            rusqlite::Error::InvalidParameterName(format!("Unknown BoxType value: {}", type_int))
+        })?,
         storage_path,
         sort_order,
         created_at: parse_dt(&created_at_str)?,
@@ -81,10 +82,12 @@ fn read_item(row: &rusqlite::Row) -> rusqlite::Result<DrawerItem> {
         id: parse_uuid(&id_str)?,
         box_id: parse_uuid(&box_id_str)?,
         display_name,
-        item_kind: ItemKind::from_i32(item_kind_int)
-            .ok_or_else(|| rusqlite::Error::InvalidParameterName(
-                format!("Unknown ItemKind value: {}", item_kind_int),
-            ))?,
+        item_kind: ItemKind::from_i32(item_kind_int).ok_or_else(|| {
+            rusqlite::Error::InvalidParameterName(format!(
+                "Unknown ItemKind value: {}",
+                item_kind_int
+            ))
+        })?,
         source_path,
         stored_path,
         sort_order,
@@ -118,15 +121,9 @@ fn read_todo(row: &rusqlite::Row) -> rusqlite::Result<TodoItem> {
         sort_order,
         created_at: parse_dt(&created_at_str)?,
         updated_at: parse_dt(&updated_at_str)?,
-        completed_at: completed_at_str
-            .as_deref()
-            .map(parse_dt)
-            .transpose()?,
+        completed_at: completed_at_str.as_deref().map(parse_dt).transpose()?,
         is_archived: is_archived_int != 0,
-        archived_at: archived_at_str
-            .as_deref()
-            .map(parse_dt)
-            .transpose()?,
+        archived_at: archived_at_str.as_deref().map(parse_dt).transpose()?,
     })
 }
 
@@ -148,8 +145,7 @@ impl DrawerRepository {
 
     /// Open a fresh connection (matching the C# per-call pattern).
     fn create_connection(&self) -> AppResult<Connection> {
-        let flags =
-            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE;
+        let flags = OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE;
         let conn = Connection::open_with_flags(&self.db_path, flags)?;
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         Ok(conn)
@@ -224,12 +220,7 @@ impl DrawerRepository {
         Self::ensure_column(&conn, "Items", "GridColumn", "INTEGER NULL")?;
         Self::ensure_column(&conn, "Items", "GridRow", "INTEGER NULL")?;
         Self::ensure_column(&conn, "Todos", "BoxId", "TEXT NULL")?;
-        Self::ensure_column(
-            &conn,
-            "Todos",
-            "IsArchived",
-            "INTEGER NOT NULL DEFAULT 0",
-        )?;
+        Self::ensure_column(&conn, "Todos", "IsArchived", "INTEGER NOT NULL DEFAULT 0")?;
         Self::ensure_column(&conn, "Todos", "ArchivedAt", "TEXT NULL")?;
 
         conn.execute_batch(
@@ -259,7 +250,10 @@ impl DrawerRepository {
 
         if !columns.iter().any(|c| c.eq_ignore_ascii_case(column)) {
             conn.execute(
-                &format!("ALTER TABLE {} ADD COLUMN {} {};", table, column, definition),
+                &format!(
+                    "ALTER TABLE {} ADD COLUMN {} {};",
+                    table, column, definition
+                ),
                 [],
             )?;
         }
@@ -333,13 +327,14 @@ impl DrawerRepository {
         let now = to_db(Utc::now());
 
         {
-            let mut stmt = tx.prepare(
-                "UPDATE Boxes SET SortOrder = ?1, UpdatedAt = ?2 WHERE Id = ?3;",
-            )?;
+            let mut stmt =
+                tx.prepare("UPDATE Boxes SET SortOrder = ?1, UpdatedAt = ?2 WHERE Id = ?3;")?;
             for (index, id) in ordered_box_ids.iter().enumerate() {
                 let changed = stmt.execute(params![index as i32, now, id.to_string()])?;
                 if changed == 0 {
-                    return Err(AppError::invalid_arg("Cannot reorder a box that does not exist."));
+                    return Err(AppError::invalid_arg(
+                        "Cannot reorder a box that does not exist.",
+                    ));
                 }
             }
         }
@@ -471,6 +466,7 @@ impl DrawerRepository {
 
     /// Move an item to a different box with new metadata.
     /// Matches the C# `MoveItemToBoxAsync(DrawerItem item, ...)` signature.
+    #[allow(clippy::too_many_arguments)]
     pub fn move_item_to_box(
         &self,
         item: &DrawerItem,
@@ -679,8 +675,7 @@ impl DrawerRepository {
     /// Get a setting value by key, or `None` if not found.
     pub fn get_setting(&self, key: &str) -> AppResult<Option<String>> {
         let conn = self.create_connection()?;
-        let mut stmt =
-            conn.prepare("SELECT Value FROM AppSettings WHERE Key = ?1;")?;
+        let mut stmt = conn.prepare("SELECT Value FROM AppSettings WHERE Key = ?1;")?;
         let mut rows = stmt.query_map(params![key], |row| row.get::<_, String>(0))?;
         match rows.next() {
             Some(r) => Ok(Some(r?)),
@@ -1045,7 +1040,8 @@ mod tests {
         let id = item.id;
         repo.add_item(&item).unwrap();
 
-        repo.update_item_grid_position(id, Some(5), Some(7)).unwrap();
+        repo.update_item_grid_position(id, Some(5), Some(7))
+            .unwrap();
         let fetched = repo.get_item(id).unwrap().unwrap();
         assert_eq!(fetched.grid_column, Some(5));
         assert_eq!(fetched.grid_row, Some(7));
@@ -1069,8 +1065,16 @@ mod tests {
         repo.add_item(&item).unwrap();
 
         repo.move_item_to_box(
-            &item, b2.id, "Moved", Some("/new/path"), None, 0, Some(1), Some(2),
-        ).unwrap();
+            &item,
+            b2.id,
+            "Moved",
+            Some("/new/path"),
+            None,
+            0,
+            Some(1),
+            Some(2),
+        )
+        .unwrap();
 
         let fetched = repo.get_item(id).unwrap().unwrap();
         assert_eq!(fetched.box_id, b2.id);
@@ -1212,7 +1216,8 @@ mod tests {
         repo.add_todo(&td).unwrap();
 
         let completed = now();
-        repo.update_todo_completion(id, true, Some(completed), now()).unwrap();
+        repo.update_todo_completion(id, true, Some(completed), now())
+            .unwrap();
 
         let fetched = repo.get_todo(id).unwrap().unwrap();
         assert!(fetched.is_completed);
@@ -1279,13 +1284,15 @@ mod tests {
         repo.add_todo(&td).unwrap();
 
         let archive_time = now();
-        repo.update_todo_archive_state(id, true, Some(archive_time), now()).unwrap();
+        repo.update_todo_archive_state(id, true, Some(archive_time), now())
+            .unwrap();
 
         let fetched = repo.get_todo(id).unwrap().unwrap();
         assert!(fetched.is_archived);
         assert!(fetched.archived_at.is_some());
 
-        repo.update_todo_archive_state(id, false, None, now()).unwrap();
+        repo.update_todo_archive_state(id, false, None, now())
+            .unwrap();
         let fetched = repo.get_todo(id).unwrap().unwrap();
         assert!(!fetched.is_archived);
         assert!(fetched.archived_at.is_none());

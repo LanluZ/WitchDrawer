@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-
 /// 对应 C# ItemDeleteResult
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ItemDeleteResult {

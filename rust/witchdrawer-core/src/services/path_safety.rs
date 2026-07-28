@@ -1,6 +1,7 @@
 //! Path validation utilities: resolve full existing paths and enforce child containment.
 
-use std::path::{Path, PathBuf};
+use std::ffi::OsString;
+use std::path::{Component, Path, PathBuf};
 
 use crate::models::{AppError, AppResult};
 
@@ -22,26 +23,16 @@ pub fn get_full_existing_path(path: &str) -> AppResult<PathBuf> {
 
 /// Ensure that `candidate` is a descendant of `root`.
 ///
-/// Both paths are canonicalized before comparison. Throws if the candidate
-/// escapes the root.
+/// Existing ancestors are canonicalized before comparison so the function is
+/// safe for both existing files and destinations that are about to be created.
+/// Symlinked ancestors are resolved and cannot be used to escape the root.
 pub fn ensure_child_path(root: &Path, candidate: &Path) -> AppResult<()> {
-    let root_full = root.canonicalize().map_err(|e| {
-        AppError::io_error(format!("Cannot resolve root path: {}", e))
-    })?;
-    let candidate_full = candidate.canonicalize().map_err(|e| {
-        AppError::io_error(format!("Cannot resolve candidate path: {}", e))
-    })?;
+    let root_full = root
+        .canonicalize()
+        .map_err(|e| AppError::io_error(format!("Cannot resolve root path: {}", e)))?;
+    let candidate_full = canonicalize_allow_missing(candidate)?;
 
-    // Build the expected prefix: root with trailing separator.
-    let root_str = root_full.to_string_lossy();
-    let root_prefix = if root_str.ends_with(std::path::MAIN_SEPARATOR) {
-        root_str.to_string()
-    } else {
-        format!("{}{}", root_str, std::path::MAIN_SEPARATOR)
-    };
-
-    let candidate_str = candidate_full.to_string_lossy();
-    if !candidate_str.starts_with(&root_prefix) {
+    if candidate_full == root_full || !candidate_full.starts_with(&root_full) {
         return Err(AppError::io_error(format!(
             "Target path is outside the allowed storage root: {}",
             candidate_full.display()
@@ -49,6 +40,52 @@ pub fn ensure_child_path(root: &Path, candidate: &Path) -> AppResult<()> {
     }
 
     Ok(())
+}
+
+/// Canonicalize the nearest existing ancestor and append the missing suffix.
+/// This preserves the security properties of `canonicalize` without requiring
+/// the final destination to exist already.
+fn canonicalize_allow_missing(path: &Path) -> AppResult<PathBuf> {
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()?.join(path)
+    };
+
+    let mut ancestor = absolute.as_path();
+    let mut missing_parts: Vec<OsString> = Vec::new();
+
+    while !ancestor.exists() {
+        let name = ancestor.file_name().ok_or_else(|| {
+            AppError::io_error(format!(
+                "Cannot resolve candidate path: {}",
+                absolute.display()
+            ))
+        })?;
+        missing_parts.push(name.to_os_string());
+        ancestor = ancestor.parent().ok_or_else(|| {
+            AppError::io_error(format!(
+                "Cannot resolve candidate path: {}",
+                absolute.display()
+            ))
+        })?;
+    }
+
+    let mut resolved = ancestor
+        .canonicalize()
+        .map_err(|e| AppError::io_error(format!("Cannot resolve candidate path: {}", e)))?;
+    for part in missing_parts.iter().rev() {
+        let component = Path::new(part).components().next();
+        if !matches!(component, Some(Component::Normal(_))) {
+            return Err(AppError::io_error(format!(
+                "Candidate path contains an invalid component: {}",
+                absolute.display()
+            )));
+        }
+        resolved.push(part);
+    }
+
+    Ok(resolved)
 }
 
 // ---------------------------------------------------------------------------
@@ -96,6 +133,21 @@ mod tests {
         let root = tmp.path().canonicalize().unwrap();
         let child_full = child.canonicalize().unwrap();
         assert!(ensure_child_path(&root, &child_full).is_ok());
+    }
+
+    #[test]
+    fn missing_child_path_ok() {
+        let tmp = TempDir::new().unwrap();
+        let child = tmp.path().join("missing").join("file.txt");
+
+        assert!(ensure_child_path(tmp.path(), &child).is_ok());
+    }
+
+    #[test]
+    fn root_itself_is_not_a_child() {
+        let tmp = TempDir::new().unwrap();
+
+        assert!(ensure_child_path(tmp.path(), tmp.path()).is_err());
     }
 
     #[test]
