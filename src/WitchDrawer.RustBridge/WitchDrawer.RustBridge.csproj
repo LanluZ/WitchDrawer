@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\WitchDrawer.Core\WitchDrawer.Core.csproj" />
+  </ItemGroup>
+
+  <!-- Auto-build Rust DLL before compiling -->
+  <Target Name="BuildRustCore" BeforeTargets="BeforeBuild" Condition="'$(SkipRustBuild)' != 'true'">
+    <Exec Command="cargo build --release --manifest-path=$(MSBuildThisFileDirectory)..\..\rust\witchdrawer-core\Cargo.toml" />
+    <Copy SourceFiles="$(MSBuildThisFileDirectory)..\..\rust\witchdrawer-core\target\release\witchdrawer_core.dll"
+          DestinationFolder="$(OutputPath)"
+          SkipUnchangedFiles="true" />
+  </Target>
+</Project>
