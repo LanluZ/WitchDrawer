@@ -314,7 +314,11 @@ pub unsafe extern "C" fn wd_get_items(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn wd_search_items(ctx: *mut Context, query: *const c_char) -> *mut c_char {
+pub unsafe extern "C" fn wd_search_items(
+    ctx: *mut Context,
+    query: *const c_char,
+    limit: i32,
+) -> *mut c_char {
     ffi_catch(|| {
         let ctx = match unsafe { ctx.as_ref() } {
             Some(c) => c,
@@ -324,7 +328,7 @@ pub unsafe extern "C" fn wd_search_items(ctx: *mut Context, query: *const c_char
             Some(s) => s,
             None => return ffi_err("invalid query"),
         };
-        match ctx.drawer.search_items(&q, 200) {
+        match ctx.drawer.search_items(&q, limit) {
             Ok(items) => ffi_ok(items.iter().map(FfiDrawerItem::from).collect::<Vec<_>>()),
             Err(e) => ffi_err(&e.message),
         }
@@ -488,6 +492,54 @@ pub unsafe extern "C" fn wd_update_grid_pos(
 }
 
 // ---------------------------------------------------------------------------
+// Settings operations
+// ---------------------------------------------------------------------------
+
+#[no_mangle]
+pub unsafe extern "C" fn wd_get_setting(ctx: *mut Context, key: *const c_char) -> *mut c_char {
+    ffi_catch(|| {
+        let ctx = match unsafe { ctx.as_ref() } {
+            Some(c) => c,
+            None => return ffi_err("null context"),
+        };
+        let key = match unsafe { cstr_to_string(key) } {
+            Some(value) => value,
+            None => return ffi_err("invalid setting key"),
+        };
+        match ctx.drawer.get_setting(&key) {
+            Ok(value) => ffi_ok(value),
+            Err(e) => ffi_err(&e.message),
+        }
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn wd_set_setting(
+    ctx: *mut Context,
+    key: *const c_char,
+    value: *const c_char,
+) -> *mut c_char {
+    ffi_catch(|| {
+        let ctx = match unsafe { ctx.as_ref() } {
+            Some(c) => c,
+            None => return ffi_err("null context"),
+        };
+        let key = match unsafe { cstr_to_string(key) } {
+            Some(value) => value,
+            None => return ffi_err("invalid setting key"),
+        };
+        let value = match unsafe { cstr_to_string(value) } {
+            Some(value) => value,
+            None => return ffi_err("invalid setting value"),
+        };
+        match ctx.drawer.set_setting(&key, &value) {
+            Ok(()) => ffi_ok(serde_json::Value::Null),
+            Err(e) => ffi_err(&e.message),
+        }
+    })
+}
+
+// ---------------------------------------------------------------------------
 // Todo operations
 // ---------------------------------------------------------------------------
 
@@ -507,6 +559,35 @@ pub unsafe extern "C" fn wd_get_todos(ctx: *mut Context, box_id: *const c_char) 
             Err(e) => return ffi_err(&e.message),
         };
         match ctx.todo.get_todos(id) {
+            Ok(todos) => ffi_ok(todos.iter().map(FfiTodoItem::from).collect::<Vec<_>>()),
+            Err(e) => ffi_err(&e.message),
+        }
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn wd_get_archived_todos(
+    ctx: *mut Context,
+    box_id_or_null: *const c_char,
+) -> *mut c_char {
+    ffi_catch(|| {
+        let ctx = match unsafe { ctx.as_ref() } {
+            Some(c) => c,
+            None => return ffi_err("null context"),
+        };
+        let box_id = if box_id_or_null.is_null() {
+            None
+        } else {
+            let value = match unsafe { cstr_to_string(box_id_or_null) } {
+                Some(value) => value,
+                None => return ffi_err("invalid box_id"),
+            };
+            match parse_uuid(&value) {
+                Ok(id) => Some(id),
+                Err(e) => return ffi_err(&e.message),
+            }
+        };
+        match ctx.todo.get_archived_todos(box_id) {
             Ok(todos) => ffi_ok(todos.iter().map(FfiTodoItem::from).collect::<Vec<_>>()),
             Err(e) => ffi_err(&e.message),
         }
@@ -657,8 +738,48 @@ pub unsafe extern "C" fn wd_check_update(
             None => return ffi_err("null context"),
         };
         let ver = unsafe { cstr_to_string(current_version) }.unwrap_or_else(|| "0.0.0".to_string());
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        match rt.block_on(ctx.update.check_for_update(&ver)) {
+        let runtime = match tokio::runtime::Runtime::new() {
+            Ok(runtime) => runtime,
+            Err(e) => return ffi_err(&format!("Failed to create async runtime: {e}")),
+        };
+        match runtime.block_on(ctx.update.check_for_update(&ver)) {
+            Ok(result) => ffi_ok(result),
+            Err(e) => ffi_err(&e.message),
+        }
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn wd_download_and_apply_update(
+    ctx: *mut Context,
+    download_url: *const c_char,
+    expected_sha256_or_null: *const c_char,
+) -> *mut c_char {
+    ffi_catch(|| {
+        let ctx = match unsafe { ctx.as_ref() } {
+            Some(c) => c,
+            None => return ffi_err("null context"),
+        };
+        let url = match unsafe { cstr_to_string(download_url) } {
+            Some(value) => value,
+            None => return ffi_err("invalid download_url"),
+        };
+        let expected_sha256 = if expected_sha256_or_null.is_null() {
+            None
+        } else {
+            match unsafe { cstr_to_string(expected_sha256_or_null) } {
+                Some(value) => Some(value),
+                None => return ffi_err("invalid expected_sha256"),
+            }
+        };
+        let runtime = match tokio::runtime::Runtime::new() {
+            Ok(runtime) => runtime,
+            Err(e) => return ffi_err(&format!("Failed to create async runtime: {e}")),
+        };
+        match runtime.block_on(
+            ctx.update
+                .download_and_apply_update(&url, expected_sha256.as_deref()),
+        ) {
             Ok(result) => ffi_ok(result),
             Err(e) => ffi_err(&e.message),
         }

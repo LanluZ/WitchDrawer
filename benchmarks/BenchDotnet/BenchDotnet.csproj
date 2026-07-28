@@ -8,6 +8,6 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\WitchDrawer.Core\WitchDrawer.Core.csproj" />
-    <ProjectReference Include="..\..\src\WitchDrawer.RustBridge\WitchDrawer.RustBridge.csproj" />
+    <ProjectReference Include="..\WitchDrawer.LegacyCore\WitchDrawer.LegacyCore.csproj" />
   </ItemGroup>
 </Project>

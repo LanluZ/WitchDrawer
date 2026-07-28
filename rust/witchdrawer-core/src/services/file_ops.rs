@@ -92,14 +92,22 @@ fn path_root_str(path: &Path) -> Option<String> {
 /// On failure during deletion, the copy is rolled back (best-effort).
 fn copy_then_delete(source: &Path, dest: &Path, is_dir: bool) -> AppResult<()> {
     if is_dir {
-        copy_directory(source, dest)?;
+        if let Err(error) = copy_directory(source, dest) {
+            // A recursive copy may already have created part of the tree.
+            let _ = fs::remove_dir_all(dest);
+            return Err(error);
+        }
         if let Err(e) = fs::remove_dir_all(source) {
             // Best-effort rollback.
             let _ = fs::remove_dir_all(dest);
             return Err(e.into());
         }
     } else {
-        fs::copy(source, dest)?;
+        if let Err(error) = fs::copy(source, dest) {
+            // Some filesystems can leave a partial destination after failure.
+            let _ = fs::remove_file(dest);
+            return Err(error.into());
+        }
         if let Err(e) = fs::remove_file(source) {
             let _ = fs::remove_file(dest);
             return Err(e.into());
@@ -211,6 +219,23 @@ mod tests {
 
         assert!(!src.exists());
         assert_eq!(fs::read_to_string(&dst).unwrap(), "cross-volume-data");
+    }
+
+    #[test]
+    fn failed_directory_copy_removes_partial_destination() {
+        let tmp = TempDir::new().unwrap();
+        let src = tmp.path().join("source");
+        let dst = tmp.path().join("destination");
+        fs::create_dir(&src).unwrap();
+        fs::write(src.join("entry"), "content").unwrap();
+
+        // Force fs::copy(file, target) to fail by pre-creating that target as a directory.
+        fs::create_dir(&dst).unwrap();
+        fs::create_dir(dst.join("entry")).unwrap();
+
+        assert!(copy_then_delete(&src, &dst, true).is_err());
+        assert!(src.exists());
+        assert!(!dst.exists());
     }
 
     #[cfg(windows)]

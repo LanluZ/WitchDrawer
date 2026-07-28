@@ -6,7 +6,6 @@ using WitchDrawer.Core;
 using WitchDrawer.Core.Models;
 using WitchDrawer.Core.Services;
 using WitchDrawer.Core.Storage;
-using WitchDrawer.RustBridge;
 
 const int TrialCount = 7;
 const int MappingItemCount = 200;

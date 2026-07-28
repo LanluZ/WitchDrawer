@@ -153,12 +153,26 @@ impl TodoService {
                 "\u{5F85}\u{529E}\u{5185}\u{5BB9}\u{4E0D}\u{80FD}\u{4E3A}\u{7A7A}\u{3002}",
             ));
         }
-        if trimmed.len() > MAX_TITLE_LENGTH {
+        if trimmed.chars().count() > MAX_TITLE_LENGTH {
             return Err(AppError::invalid_arg(format!(
                 "\u{5F85}\u{529E}\u{5185}\u{5BB9}\u{4E0D}\u{80FD}\u{8D85}\u{8FC7} {} \u{4E2A}\u{5B57}\u{7B26}\u{3002}",
                 MAX_TITLE_LENGTH
             )));
         }
         Ok(trimmed)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn title_limit_counts_unicode_characters_not_utf8_bytes() {
+        let title = "待".repeat(MAX_TITLE_LENGTH);
+        assert_eq!(TodoService::normalize_title(&title).unwrap(), title);
+
+        let too_long = "待".repeat(MAX_TITLE_LENGTH + 1);
+        assert!(TodoService::normalize_title(&too_long).is_err());
     }
 }

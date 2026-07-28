@@ -1,10 +1,11 @@
 using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using WitchDrawer.Core.Abstractions;
+using WitchDrawer.Core.Logging;
 using WitchDrawer.Core.Models;
-using WitchDrawer.Core.Services;
 
-namespace WitchDrawer.RustBridge;
+namespace WitchDrawer.Core.Services;
 
 /// <summary>
 /// Low-level P/Invoke declarations for the Rust native library (witchdrawer_core.dll).
@@ -53,7 +54,8 @@ internal static class RustCore
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
     internal static extern IntPtr wd_search_items(
         RustContextHandle ctx,
-        [MarshalAs(UnmanagedType.LPUTF8Str)] string query);
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string query,
+        int limit);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
     internal static extern IntPtr wd_import_path(
@@ -90,9 +92,23 @@ internal static class RustCore
         int gridRow);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern IntPtr wd_get_setting(
+        RustContextHandle ctx,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string key);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern IntPtr wd_set_setting(
+        RustContextHandle ctx,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string key,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string value);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
     internal static extern IntPtr wd_get_todos(
         RustContextHandle ctx,
         [MarshalAs(UnmanagedType.LPUTF8Str)] string boxId);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern IntPtr wd_get_archived_todos(RustContextHandle ctx, IntPtr boxIdOrNull);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
     internal static extern IntPtr wd_add_todo(
@@ -127,6 +143,12 @@ internal static class RustCore
         [MarshalAs(UnmanagedType.LPUTF8Str)] string currentVersion);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern IntPtr wd_download_and_apply_update(
+        RustContextHandle ctx,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string downloadUrl,
+        IntPtr expectedSha256OrNull);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
     internal static extern void wd_free_string(IntPtr ptr);
 
     // ── Helpers ──────────────────────────────────────────────────────────
@@ -159,6 +181,21 @@ internal static class RustCore
         {
             throw new InvalidOperationException(response.Error ?? "Unknown Rust error");
         }
+    }
+
+    internal static T? CallNullable<T>(Func<IntPtr> nativeCall)
+    {
+        var ptr = nativeCall();
+        var json = ReadAndFree(ptr);
+        var response = JsonSerializer.Deserialize<FfiResponse<T>>(json)
+            ?? throw new InvalidOperationException($"Failed to deserialize Rust response: {json}");
+
+        if (!response.Ok)
+        {
+            throw new InvalidOperationException(response.Error ?? "Unknown Rust error");
+        }
+
+        return response.Data;
     }
 
     internal static string ReadAndFree(IntPtr ptr)
@@ -437,38 +474,53 @@ internal sealed class RustContextHandle : SafeHandle
 }
 
 // ============================================================================
-// RustDrawerService – synchronous experimental adapter
+// RustDrawerService – production async adapter with synchronous benchmark helpers
 // ============================================================================
 
 /// <summary>
 /// Wraps the Rust native DrawerService via P/Invoke.
-/// Exposes the implemented Rust drawer operations for integration testing.
-/// It is not API-compatible with the production asynchronous <see cref="DrawerService"/>.
+/// Implements the production async service contract while retaining synchronous
+/// helpers for isolated integration tests and migration benchmarks.
 /// </summary>
-public sealed class RustDrawerService : IDisposable
+public sealed class RustDrawerService : IDisposable, IDrawerService
 {
-    private readonly RustContextHandle _ctx;
+    private readonly string _dataDirectory;
+    private readonly object _contextLock = new();
+    private readonly SemaphoreSlim _mutationGate = new(1, 1);
+    private RustContextHandle? _ctx;
+    private bool _disposed;
 
     /// <summary>
-    /// Create the native context. Must call <see cref="Dispose"/> when done.
+    /// Configure the native context. Initialization is deferred until
+    /// <see cref="InitializeAsync"/> or the first synchronous benchmark call.
     /// </summary>
     public RustDrawerService(string dataDirectory)
     {
-        var context = RustCore.wd_init(dataDirectory);
-        if (context == IntPtr.Zero)
-        {
-            throw new InvalidOperationException("Failed to initialize Rust core");
-        }
-
-        _ctx = new RustContextHandle(context);
+        ArgumentException.ThrowIfNullOrWhiteSpace(dataDirectory);
+        _dataDirectory = Path.GetFullPath(dataDirectory);
     }
 
     internal RustContextHandle Context
     {
         get
         {
-            ObjectDisposedException.ThrowIf(_ctx.IsClosed, this);
-            return _ctx;
+            lock (_contextLock)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                if (_ctx is not null)
+                {
+                    return _ctx;
+                }
+
+                var context = RustCore.wd_init(_dataDirectory);
+                if (context == IntPtr.Zero)
+                {
+                    throw new InvalidOperationException("Failed to initialize Rust core");
+                }
+
+                _ctx = new RustContextHandle(context);
+                return _ctx;
+            }
         }
     }
 
@@ -532,9 +584,8 @@ public sealed class RustDrawerService : IDisposable
     public IReadOnlyList<DrawerItem> SearchItems(string query, int limit = 200)
     {
         var list = RustCore.Call<List<RustCore.FfiDrawerItemDto>>(() =>
-            RustCore.wd_search_items(Context, query));
-        // Limit is applied on the C# side; the Rust side returns all matches.
-        return list.Take(limit).Select(dto => dto.ToModel()).ToList();
+            RustCore.wd_search_items(Context, query, limit));
+        return list.Select(dto => dto.ToModel()).ToList();
     }
 
     public DrawerItem ImportPath(Guid boxId, string sourcePath, int? gridColumn = null, int? gridRow = null)
@@ -582,7 +633,184 @@ public sealed class RustDrawerService : IDisposable
 
     public void Dispose()
     {
-        _ctx.Dispose();
+        RustContextHandle? context;
+        lock (_contextLock)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            context = _ctx;
+            _ctx = null;
+        }
+
+        context?.Dispose();
+        _mutationGate.Dispose();
+    }
+
+    public string? GetSetting(string key)
+    {
+        return RustCore.CallNullable<string>(() => RustCore.wd_get_setting(Context, key));
+    }
+
+    public void SetSetting(string key, string value)
+    {
+        RustCore.CallVoid(() => RustCore.wd_set_setting(Context, key, value));
+    }
+
+    public Task InitializeAsync(CancellationToken cancellationToken = default)
+    {
+        return RunAsync(() => { _ = Context; }, cancellationToken);
+    }
+
+    public Task<IReadOnlyList<Box>> GetBoxesAsync(CancellationToken cancellationToken = default) =>
+        RunAsync(GetBoxes, cancellationToken);
+
+    public Task ReorderBoxesAsync(
+        IReadOnlyList<Guid> orderedBoxIds,
+        CancellationToken cancellationToken = default) =>
+        RunExclusiveAsync(() => ReorderBoxes(orderedBoxIds), cancellationToken);
+
+    public Task<IReadOnlyList<DrawerItem>> GetItemsAsync(
+        Guid boxId,
+        CancellationToken cancellationToken = default) =>
+        RunExclusiveAsync(() => GetItems(boxId), cancellationToken);
+
+    public Task<IReadOnlyList<DrawerItem>> GetAllItemsAsync(CancellationToken cancellationToken = default) =>
+        RunExclusiveAsync(GetAllItems, cancellationToken);
+
+    public Task<IReadOnlyList<DrawerItem>> SearchItemsAsync(
+        string query,
+        int limit = 200,
+        CancellationToken cancellationToken = default) =>
+        RunExclusiveAsync(() => SearchItems(query, limit), cancellationToken);
+
+    public Task<Box> CreateBoxAsync(
+        string name,
+        BoxType type,
+        CancellationToken cancellationToken = default) =>
+        RunExclusiveAsync(() => CreateBox(name, type), cancellationToken);
+
+    public Task<DrawerItem> ImportPathAsync(
+        Guid boxId,
+        string sourcePath,
+        int? gridColumn = null,
+        int? gridRow = null,
+        CancellationToken cancellationToken = default) =>
+        RunExclusiveAsync(() => ImportPath(boxId, sourcePath, gridColumn, gridRow), cancellationToken);
+
+    public Task UpdateItemGridPositionAsync(
+        Guid itemId,
+        int? gridColumn,
+        int? gridRow,
+        CancellationToken cancellationToken = default) =>
+        RunExclusiveAsync(() => UpdateItemGridPosition(itemId, gridColumn, gridRow), cancellationToken);
+
+    public Task MoveItemToBoxAsync(
+        Guid itemId,
+        Guid targetBoxId,
+        int? gridColumn = null,
+        int? gridRow = null,
+        CancellationToken cancellationToken = default) =>
+        RunExclusiveAsync(() => MoveItemToBox(itemId, targetBoxId, gridColumn, gridRow), cancellationToken);
+
+    public Task<string> ExportItemToDirectoryAsync(
+        Guid itemId,
+        string targetDirectory,
+        CancellationToken cancellationToken = default) =>
+        RunExclusiveAsync(() => ExportItemToDirectory(itemId, targetDirectory), cancellationToken);
+
+    public Task<ItemDeleteResult> DeleteItemAsync(
+        Guid itemId,
+        CancellationToken cancellationToken = default) =>
+        RunExclusiveAsync(() => DeleteItem(itemId), cancellationToken);
+
+    public Task<BoxDeleteResult> DeleteBoxAsync(
+        Guid boxId,
+        CancellationToken cancellationToken = default) =>
+        RunExclusiveAsync(() => DeleteBox(boxId), cancellationToken);
+
+    public Task<string?> GetSettingAsync(
+        string key,
+        CancellationToken cancellationToken = default) =>
+        RunAsync(() => GetSetting(key), cancellationToken);
+
+    public Task SetSettingAsync(
+        string key,
+        string value,
+        CancellationToken cancellationToken = default) =>
+        RunExclusiveAsync(() => SetSetting(key, value), cancellationToken);
+
+    public Task RenameBoxAsync(
+        Guid boxId,
+        string newName,
+        CancellationToken cancellationToken = default) =>
+        RunExclusiveAsync(() => RenameBox(boxId, newName), cancellationToken);
+
+    public async Task OpenItemAsync(
+        Guid itemId,
+        IFileLauncher launcher,
+        CancellationToken cancellationToken = default)
+    {
+        var item = await RunExclusiveAsync(
+            () => GetAllItems().FirstOrDefault(candidate => candidate.Id == itemId)
+                ?? throw new InvalidOperationException("Item does not exist."),
+            cancellationToken);
+        var path = item.EffectivePath;
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            throw new InvalidOperationException("Item has no file path.");
+        }
+
+        await launcher.OpenAsync(path, cancellationToken);
+    }
+
+    private static Task<T> RunAsync<T>(Func<T> operation, CancellationToken cancellationToken)
+    {
+        return Task.Run(() =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return operation();
+        }, cancellationToken);
+    }
+
+    private static Task RunAsync(Action operation, CancellationToken cancellationToken)
+    {
+        return Task.Run(() =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            operation();
+        }, cancellationToken);
+    }
+
+    internal async Task<T> RunExclusiveAsync<T>(
+        Func<T> operation,
+        CancellationToken cancellationToken)
+    {
+        await _mutationGate.WaitAsync(cancellationToken);
+        try
+        {
+            return await RunAsync(operation, cancellationToken);
+        }
+        finally
+        {
+            _mutationGate.Release();
+        }
+    }
+
+    internal async Task RunExclusiveAsync(Action operation, CancellationToken cancellationToken)
+    {
+        await _mutationGate.WaitAsync(cancellationToken);
+        try
+        {
+            await RunAsync(operation, cancellationToken);
+        }
+        finally
+        {
+            _mutationGate.Release();
+        }
     }
 }
 
@@ -592,9 +820,9 @@ public sealed class RustDrawerService : IDisposable
 
 /// <summary>
 /// Wraps the Rust native TodoService via P/Invoke.
-/// Mirrors the public API of <see cref="TodoService"/>.
+/// Implements the production <see cref="ITodoService"/> contract.
 /// </summary>
-public sealed class RustTodoService
+public sealed class RustTodoService : ITodoService
 {
     private readonly RustDrawerService _owner;
 
@@ -611,6 +839,28 @@ public sealed class RustTodoService
         var list = RustCore.Call<List<RustCore.FfiTodoItemDto>>(() =>
             RustCore.wd_get_todos(_owner.Context, boxId.ToString()));
         return list.Select(dto => dto.ToModel()).ToList();
+    }
+
+    public IReadOnlyList<TodoItem> GetArchivedTodos(Guid? boxId = null)
+    {
+        if (boxId is null)
+        {
+            var all = RustCore.Call<List<RustCore.FfiTodoItemDto>>(() =>
+                RustCore.wd_get_archived_todos(_owner.Context, IntPtr.Zero));
+            return all.Select(dto => dto.ToModel()).ToList();
+        }
+
+        var pointer = Marshal.StringToCoTaskMemUTF8(boxId.Value.ToString());
+        try
+        {
+            var filtered = RustCore.Call<List<RustCore.FfiTodoItemDto>>(() =>
+                RustCore.wd_get_archived_todos(_owner.Context, pointer));
+            return filtered.Select(dto => dto.ToModel()).ToList();
+        }
+        finally
+        {
+            Marshal.ZeroFreeCoTaskMemUTF8(pointer);
+        }
     }
 
     public TodoItem AddTodo(Guid boxId, string title)
@@ -647,6 +897,45 @@ public sealed class RustTodoService
             RustCore.wd_restore_archived(_owner.Context, todoId.ToString()));
         return dto.ToModel();
     }
+
+    public Task<IReadOnlyList<TodoItem>> GetTodosAsync(
+        Guid boxId,
+        CancellationToken cancellationToken = default) =>
+        RunAsync(() => GetTodos(boxId), cancellationToken);
+
+    public Task<IReadOnlyList<TodoItem>> GetArchivedTodosAsync(
+        Guid? boxId = null,
+        CancellationToken cancellationToken = default) =>
+        RunAsync(() => GetArchivedTodos(boxId), cancellationToken);
+
+    public Task<TodoItem> AddTodoAsync(
+        Guid boxId,
+        string title,
+        CancellationToken cancellationToken = default) =>
+        _owner.RunExclusiveAsync(() => AddTodo(boxId, title), cancellationToken);
+
+    public Task<TodoItem> SetCompletedAsync(
+        Guid todoId,
+        bool isCompleted,
+        CancellationToken cancellationToken = default) =>
+        _owner.RunExclusiveAsync(() => SetCompleted(todoId, isCompleted), cancellationToken);
+
+    public Task DeleteTodoAsync(Guid todoId, CancellationToken cancellationToken = default) =>
+        _owner.RunExclusiveAsync(() => DeleteTodo(todoId), cancellationToken);
+
+    public Task<int> ArchiveCompletedAsync(
+        Guid boxId,
+        CancellationToken cancellationToken = default) =>
+        _owner.RunExclusiveAsync(() => ArchiveCompleted(boxId), cancellationToken);
+
+    public Task<TodoItem> RestoreArchivedAsync(
+        Guid todoId,
+        CancellationToken cancellationToken = default) =>
+        _owner.RunExclusiveAsync(() => RestoreArchived(todoId), cancellationToken);
+
+    private static Task<T> RunAsync<T>(Func<T> operation, CancellationToken cancellationToken) =>
+        Task.Run(operation, cancellationToken);
+
 }
 
 // ============================================================================
@@ -655,18 +944,20 @@ public sealed class RustTodoService
 
 /// <summary>
 /// Wraps the Rust native UpdateService via P/Invoke.
-/// Mirrors the public API of <see cref="UpdateService"/>.
+/// Implements the production <see cref="IUpdateService"/> contract.
 /// </summary>
-public sealed class RustUpdateService
+public sealed class RustUpdateService : IUpdateService
 {
     private readonly RustDrawerService _owner;
+    private readonly IAppLogger? _logger;
 
     /// <summary>
     /// Keeps the owning drawer service alive and shares its native context.
     /// </summary>
-    public RustUpdateService(RustDrawerService owner)
+    public RustUpdateService(RustDrawerService owner, IAppLogger? logger = null)
     {
         _owner = owner;
+        _logger = logger;
     }
 
     public UpdateCheckResult CheckForUpdate(Version currentVersion)
@@ -674,5 +965,60 @@ public sealed class RustUpdateService
         var dto = RustCore.Call<RustCore.FfiUpdateCheckResultDto>(() =>
             RustCore.wd_check_update(_owner.Context, currentVersion.ToString()));
         return dto.ToModel();
+    }
+
+    public bool DownloadAndApplyUpdate(string downloadUrl, string? expectedSha256 = null)
+    {
+        if (expectedSha256 is null)
+        {
+            return RustCore.Call<bool>(() =>
+                RustCore.wd_download_and_apply_update(_owner.Context, downloadUrl, IntPtr.Zero));
+        }
+
+        var pointer = Marshal.StringToCoTaskMemUTF8(expectedSha256);
+        try
+        {
+            return RustCore.Call<bool>(() =>
+                RustCore.wd_download_and_apply_update(_owner.Context, downloadUrl, pointer));
+        }
+        finally
+        {
+            Marshal.ZeroFreeCoTaskMemUTF8(pointer);
+        }
+    }
+
+    public async Task<UpdateCheckResult> CheckForUpdateAsync(Version currentVersion)
+    {
+        try
+        {
+            return await Task.Run(() => CheckForUpdate(currentVersion));
+        }
+        catch (Exception exception)
+        {
+            _logger?.Error(exception, "Rust core failed to check for updates.");
+            return new UpdateCheckResult();
+        }
+    }
+
+    public async Task<bool> DownloadAndApplyUpdateAsync(
+        string downloadUrl,
+        IProgress<int>? progress = null,
+        string? expectedSha256 = null)
+    {
+        try
+        {
+            progress?.Report(0);
+            var result = await Task.Run(() => DownloadAndApplyUpdate(downloadUrl, expectedSha256));
+            if (result)
+            {
+                progress?.Report(100);
+            }
+            return result;
+        }
+        catch (Exception exception)
+        {
+            _logger?.Error(exception, "Rust core failed to download/apply update.");
+            return false;
+        }
     }
 }

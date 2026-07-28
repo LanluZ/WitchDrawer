@@ -1,17 +1,9 @@
-# Core Performance Comparison
+# Rust Core Migration Performance
 
-Measured on 2026-07-28 after the RustBridge safety and ABI fixes.
-
-## Product impact
-
-The production `WitchDrawer.App` still references only `WitchDrawer.Core` and
-`WitchDrawer.Native`. No production App/Core/Native source file changed in the
-Rust experiment, so the attributable improvement to the shipped application's
-cold start, idle memory, and runtime performance is currently **0%**.
-
-The numbers below compare the original C# Core with the experimental
-RustBridge. They describe the potential of a future migration, not current WPF
-application performance.
+Measured on 2026-07-28 after switching the production Core implementation from
+C# to Rust. The baseline is commit `9cf98ec`, whose WPF application still uses
+the C# SQLite/file services. The current WPF application uses the Rust-backed
+services compiled into `WitchDrawer.Core`.
 
 ## Environment
 
@@ -21,7 +13,32 @@ application performance.
 - 16 GB physical memory
 - x64 Release builds
 
-## Method
+## Production application startup and idle memory
+
+Both applications are x64 Release builds. Each trial uses a fresh data
+directory and starts with `--silent`. Engine order alternates across seven
+trials. Startup is ready only after WPF has become input-idle, SQLite exists,
+and the app logs `Application startup complete.` after loading the main list,
+quick panel, and desktop boxes. The baseline was instrumented with only this
+same final log line so both executables expose an equivalent ready point.
+Memory is sampled five seconds later.
+
+| Metric | C# baseline median | Rust current median | Rust vs C# |
+|---|---:|---:|---:|
+| Complete silent startup | 1823.55 ms | 1724.85 ms | 5.4% faster |
+| Idle working set | 173.81 MB | 184.51 MB | 6.2% more |
+| Idle private memory | 112.90 MB | 125.68 MB | 11.3% more |
+
+The production migration improves complete cold-start readiness modestly, but
+it does **not** reduce stable idle memory on this machine. The native runtime,
+bundled SQLite, and update stack add about 10.7 MB working set and 12.8 MB
+private memory at the five-second sample. Earlier database-only readiness
+produced much larger apparent startup gains, but was rejected because the UI
+and lists were not ready yet.
+
+## Core workload comparison
+
+### Method
 
 `benchmarks/BenchDotnet` launches each engine in a fresh .NET child process.
 The engine order alternates between trials. One warm-up trial is discarded,
@@ -35,32 +52,39 @@ Rust measurements additionally include the native DLL and FFI JSON bridge.
 
 | Metric | C# median | Rust median | Rust vs C# |
 |---|---:|---:|---:|
-| Core host cold start | 400.10 ms | 370.75 ms | 7.3% faster |
-| Service + schema initialization | 246.61 ms | 251.64 ms | 2.0% slower |
-| Init working-set growth | 10.73 MB | 11.46 MB | 6.7% more |
-| Init private-memory growth | 1.97 MB | 2.23 MB | 13.5% more |
-| Populate 200 items + 100 todos | 3479.48 ms | 3115.71 ms | 10.5% faster |
-| Read all 200 items | 7940.45 us/op | 7845.63 us/op | 1.2% faster |
-| Search, limit 200 | 9110.13 us/op | 7943.84 us/op | 12.8% faster |
-| Workload working-set growth | 30.89 MB | 25.62 MB | 17.1% less |
-| Workload private-memory growth | 17.35 MB | 13.24 MB | 23.7% less |
+| Core host cold start | 544.20 ms | 458.62 ms | 15.7% faster |
+| Service + schema initialization | 377.69 ms | 332.94 ms | 11.8% faster |
+| Init working-set growth | 10.85 MB | 11.52 MB | 6.2% more |
+| Init private-memory growth | 2.07 MB | 1.91 MB | 7.5% less |
+| Populate 200 items + 100 todos | 7800.25 ms | 7572.30 ms | 2.9% faster |
+| Read all 200 items | 8191.23 us/op | 7443.12 us/op | 9.1% faster |
+| Search, limit 200 | 8868.17 us/op | 8375.11 us/op | 5.6% faster |
+| Workload working-set growth | 30.70 MB | 25.47 MB | 17.0% less |
+| Workload private-memory growth | 16.98 MB | 12.63 MB | 25.6% less |
 
 ## Interpretation
 
-RustBridge is measurably better for write-heavy work, search, and memory after
-the populated workload. Plain full-list reads are effectively tied. It does
-not improve service initialization and uses slightly more memory immediately
-after initialization.
+The Rust Core is faster across this populated workload and uses less incremental
+memory after sustained work. Immediately after service initialization its
+working set is slightly larger while private-memory growth is slightly lower.
+This workload-growth result and the production idle result answer different
+questions: Rust retains less additional memory while
+processing data, but its fixed runtime cost makes the empty idle app larger.
 
 The "Core host cold start" measurement includes process launch, Core/schema
 initialization, JSON output, and process exit. It is not a WPF first-frame or
-hotkey-to-panel measurement. Before production adoption, the App must actually
-use RustBridge and a separate WPF launch/first-window benchmark must be added.
+hotkey-to-panel measurement; use the production startup table for app-level
+impact.
 
 ## Reproduce
 
 ```powershell
 dotnet run -c Release --project benchmarks\BenchDotnet\BenchDotnet.csproj
+
+.\benchmarks\AppStartupComparison.ps1 `
+  -BaselineExecutable <csharp-baseline-exe> `
+  -CurrentExecutable .\src\WitchDrawer.App\bin\Release\net10.0-windows\WitchDrawer.App.exe `
+  -Trials 7 -IdleDelayMilliseconds 5000
 ```
 
 Process memory and cold-start measurements vary with Windows file cache,

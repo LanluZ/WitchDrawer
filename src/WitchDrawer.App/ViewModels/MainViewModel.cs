@@ -17,12 +17,12 @@ public sealed class MainViewModel : ObservableObject
     private const string CrystalBoxTransparencySettingKey = "CrystalBoxTransparency";
     private const string StartupRegistryKeyName = "WitchDrawer";
 
-    private readonly DrawerService _drawerService;
-    private readonly TodoService _todoService;
+    private readonly IDrawerService _drawerService;
+    private readonly ITodoService _todoService;
     private readonly IFileLauncher _launcher;
     private readonly IAppLogger _logger;
     private readonly QuickPanelViewModel _quickPanelViewModel;
-    private readonly UpdateService _updateService;
+    private readonly IUpdateService _updateService;
     private BoxViewModel? _selectedBox;
     private CancellationTokenSource? _itemsLoadCts;
     private int _itemsLoadVersion;
@@ -42,12 +42,12 @@ public sealed class MainViewModel : ObservableObject
     private double _iconDpiScaleY = 1;
 
     public MainViewModel(
-        DrawerService drawerService,
-        TodoService todoService,
+        IDrawerService drawerService,
+        ITodoService todoService,
         IFileLauncher launcher,
         IAppLogger logger,
         QuickPanelViewModel quickPanelViewModel,
-        UpdateService updateService)
+        IUpdateService updateService)
     {
         _drawerService = drawerService;
         _todoService = todoService;

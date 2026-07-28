@@ -13,7 +13,7 @@ public sealed class FileAppLogger : IAppLogger
         _logDirectory = logDirectory;
         _retentionDays = retentionDays;
         Directory.CreateDirectory(_logDirectory);
-        TrimOldLogs();
+        _ = Task.Run(TrimOldLogs);
     }
 
     public void Info(string message)

@@ -18,8 +18,8 @@ public sealed class DesktopBoxViewModel : ObservableObject
     private const string MappingListViewMode = "List";
     private const string MappingGridViewMode = "Grid";
 
-    private readonly DrawerService _drawerService;
-    private readonly TodoService _todoService;
+    private readonly IDrawerService _drawerService;
+    private readonly ITodoService _todoService;
     private readonly IFileLauncher _launcher;
     private readonly IAppLogger _logger;
     private readonly DesktopBoxLayoutSettings _layoutSettings;
@@ -41,8 +41,8 @@ public sealed class DesktopBoxViewModel : ObservableObject
 
     public DesktopBoxViewModel(
         Box box,
-        DrawerService drawerService,
-        TodoService todoService,
+        IDrawerService drawerService,
+        ITodoService todoService,
         IFileLauncher launcher,
         IAppLogger logger,
         DesktopBoxLayoutSettings? layoutSettings = null)

@@ -1,8 +1,8 @@
-using WitchDrawer.Core.Services;
+using WitchDrawer.Core.Abstractions;
 
 namespace WitchDrawer.App.Infrastructure;
 
-internal sealed class QuickPanelHotKeySettingsStore(DrawerService drawerService)
+internal sealed class QuickPanelHotKeySettingsStore(IDrawerService drawerService)
 {
     internal const string SettingKey = "QuickPanelHotKey";
 

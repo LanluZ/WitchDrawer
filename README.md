@@ -40,7 +40,7 @@ English: WitchDrawer is a lightweight Windows desktop file drawer built with nat
 |------|------|
 | .NET 10 | 运行时 |
 | WPF | 原生 Windows UI |
-| Rust | 可选原生内核实验与 P/Invoke 兼容性测试，不由 WPF 应用加载 |
+| Rust | 生产内核：SQLite、文件操作、搜索、待办与更新逻辑 |
 | Win32 API | Shell 打开、全局快捷键、窗口层级 |
 | SQLite | 本地持久化（WAL 模式） |
 | CommunityToolkit.Mvvm | MVVM 框架 |
@@ -54,17 +54,17 @@ English: WitchDrawer is a lightweight Windows desktop file drawer built with nat
 WitchDrawer.sln
 src/
   WitchDrawer.App/         WPF UI、窗口、视图模型、拖放、快捷键绑定
-  WitchDrawer.Core/        模型、SQLite 持久化、文件导入/删除规则、更新检查
+  WitchDrawer.Core/        模型、服务契约、Rust FFI/异步适配、文件与数据内核入口
   WitchDrawer.Native/      Shell 打开、全局快捷键、系统托盘
-  WitchDrawer.RustBridge/  可选 P/Invoke 适配器（不参与 App 运行时组合）
 rust/
-  witchdrawer-core/        实验性 Rust cdylib（仓储、文件规则、FFI 导出）
+  witchdrawer-core/        Core 的生产 Rust 实现（SQLite、业务规则、文件安全）
 tests/
   WitchDrawer.Core.Tests/
   WitchDrawer.App.Tests/
-  WitchDrawer.RustBridge.Tests/
+  WitchDrawer.Core.Native.Tests/
 benchmarks/
   BenchDotnet/             .NET 内存 benchmark
+  WitchDrawer.LegacyCore/  仅用于迁移对比的原 C# 内核
 installer/
   WitchDrawer.iss          Inno Setup 安装脚本
 build.ps1                  一键构建脚本（cargo + dotnet）
@@ -74,7 +74,7 @@ build.ps1                  一键构建脚本（cargo + dotnet）
 
 - Windows 10/11
 - .NET SDK `10.0.300` 或兼容的 .NET 10 SDK
-- Rust toolchain stable（完整解决方案和 RustBridge 测试需要；仅构建 WPF 应用时可省略）
+- Rust toolchain stable（生产应用构建必需）
 
 ## 构建
 
@@ -82,12 +82,6 @@ build.ps1                  一键构建脚本（cargo + dotnet）
 
 ```powershell
 .\build.ps1 -Release
-```
-
-仅构建和测试当前生产使用的 C# Core/WPF 应用，不构建实验性 RustBridge：
-
-```powershell
-.\build.ps1 -Release -SkipRust
 ```
 
 手动分步构建：
@@ -120,11 +114,11 @@ cd rust\witchdrawer-core && cargo test --lib
 
 测试覆盖：默认收纳盒创建、普通/映射/像素盒导入、重复文件名后缀、跨盒移动、原位还原删除、更新 URL 校验，以及真实 .NET → P/Invoke → Rust 的 UTF-8、导入和恢复流程。
 
-## RustBridge 状态与成本
+## Rust 内核状态与成本
 
-生产应用仍由 `WitchDrawer.Core` 负责模型、SQLite 和所有文件变更；`WitchDrawer.App` 不引用 RustBridge。这样保持既有架构边界，也避免在日常启动中加载第二套 SQLite 实现。
+生产应用只依赖 `WitchDrawer.Core` 和 `WitchDrawer.Native`。Core 的异步服务通过内部 P/Invoke 调用 Rust；SQLite、搜索、待办、更新和所有文件变更均由 Rust 执行。原 C# 实现仅保留在 benchmark 项目，不进入 App 输出。
 
-RustBridge 目前用于验证未来原生内核迁移的 ABI 和行为。其 release DLL 约 5.3 MB，包含 bundled SQLite，并因更新检查引入 Tokio、Reqwest 和 rustls。未加载 RustBridge 时，其启动、内存和后台 CPU 成本均为零；实验进程中也不启动常驻后台任务。正式切换生产运行时前，仍需补齐异步/取消接口和完整更新流程。
+`witchdrawer_core.dll` release 约 6.0 MiB。`rusqlite` 的 bundled SQLite 避免系统 DLL 版本差异；Serde/JSON、UUID、Chrono、Hex 和 Tracing 只做数据/FFI 辅助，不创建后台线程；Tokio、Reqwest/rustls、SHA-256 与 ZIP 只在检查或应用更新时按需工作。Core 将阻塞原生调用放到工作线程并串行化数据库/文件变更，空闲时不轮询、不保留异步运行时。迁移后的真实启动与内存结果记录在性能报告中；当前完整启动更快，但稳定空闲内存略有增加。
 
 ## 基准
 
@@ -134,7 +128,7 @@ cd rust\witchdrawer-core
 cargo run --release --example rust-bench
 ```
 
-同负载 C# Core / RustBridge 对比方法与最近一次结果见
+同负载 C# Core / Rust Core 对比方法与最近一次结果见
 [`benchmarks/RESULTS.md`](benchmarks/RESULTS.md)。
 
 ## 运行时数据

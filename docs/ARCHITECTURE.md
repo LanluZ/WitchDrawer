@@ -8,20 +8,16 @@
 
 ## Layers
 - `WitchDrawer.App`: WPF shell, main drawer, quick panel, drag/drop, command binding, and hotkey message handling.
-- `WitchDrawer.Core`: `Box`, `DrawerItem`, SQLite repository, import/delete/open orchestration, path validation, and file-name conflict handling.
+- `WitchDrawer.Core`: shared models, async service interfaces, logging, application paths, UTF-8 P/Invoke, native-context lifetime, mutation serialization, and production service composition.
+- `rust/witchdrawer-core`: Core's native implementation of SQLite persistence, import/delete/update orchestration, search, path validation, and file-name conflict handling.
 - `WitchDrawer.Native`: Shell open and `RegisterHotKey`/`UnregisterHotKey` wrappers.
 
-Core defines abstractions for native operations. Native implements them. App composes the concrete services.
+App references only Core and Native. Core owns the data/file/update contracts and their Rust-backed implementations; Native implements Windows Shell and hotkey integration.
 
-`WitchDrawer.RustBridge` and `rust/witchdrawer-core` are an experimental,
-test-only migration path. The production WPF application does not reference
-them; `WitchDrawer.Core` remains the owner of models, SQLite persistence, file
-rules, search, and safety checks. RustBridge may become a production adapter
-only after its asynchronous/cancellation surface and feature parity are
-complete and this architecture decision is revised explicitly.
+The former C# SQLite/file implementation lives only in `benchmarks/WitchDrawer.LegacyCore` so the migration remains measurable and the original regression suite can run. Production App does not reference or ship that assembly.
 
 ## Data Flow
-- Startup creates app directories, initializes SQLite schema, and creates the default normal and mapping boxes if the database is empty.
+- Startup creates a Rust context, initializes the SQLite schema, and creates the default normal and mapping boxes if the database is empty.
 - Dragging into a normal box moves the file or folder into that box's storage directory, then persists a `DrawerItem`.
 - Dragging into a mapping box stores the original absolute path only. The source file remains untouched.
 - Quick panel reloads indexed items from SQLite and filters in memory for fast interactive search.
@@ -36,6 +32,7 @@ complete and this architecture decision is revised explicitly.
 
 ## Performance Budget
 - UI thread must not perform file IO, SQLite writes, or thumbnail/icon extraction.
+- Core executes blocking native calls on worker threads and serializes mutations through one gate.
 - List controls must keep virtualization enabled.
 - Quick panel should open from hotkey in under 200 ms for normal MVP-sized indexes.
 - Idle CPU should stay near 0%, and idle memory should be kept under 150 MB where practical.

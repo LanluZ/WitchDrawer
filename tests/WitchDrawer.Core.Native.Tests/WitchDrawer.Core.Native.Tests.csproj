@@ -20,7 +20,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\WitchDrawer.RustBridge\WitchDrawer.RustBridge.csproj" />
+    <ProjectReference Include="..\..\src\WitchDrawer.Core\WitchDrawer.Core.csproj" />
+    <ProjectReference Include="..\..\benchmarks\WitchDrawer.LegacyCore\WitchDrawer.LegacyCore.csproj" />
   </ItemGroup>
 
 </Project>

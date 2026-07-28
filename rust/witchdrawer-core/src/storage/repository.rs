@@ -7,6 +7,7 @@
 
 use std::fs;
 use std::path::Path;
+use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, OpenFlags};
@@ -147,6 +148,7 @@ impl DrawerRepository {
     fn create_connection(&self) -> AppResult<Connection> {
         let flags = OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE;
         let conn = Connection::open_with_flags(&self.db_path, flags)?;
+        conn.busy_timeout(Duration::from_secs(5))?;
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         Ok(conn)
     }

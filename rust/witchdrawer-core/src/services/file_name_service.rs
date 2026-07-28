@@ -18,7 +18,7 @@ pub fn get_unique_destination_path(
     fs::create_dir_all(directory)?;
 
     let candidate = directory.join(original_name);
-    if !exists(&candidate, is_dir) {
+    if !candidate.exists() {
         return Ok(candidate);
     }
 
@@ -39,7 +39,7 @@ pub fn get_unique_destination_path(
 
     for index in 1..10_000 {
         let candidate = directory.join(format!("{} ({}){}", name_part, index, ext_part));
-        if !exists(&candidate, is_dir) {
+        if !candidate.exists() {
             return Ok(candidate);
         }
     }
@@ -48,14 +48,6 @@ pub fn get_unique_destination_path(
         "Could not find a free file name for {}.",
         original_name
     )))
-}
-
-fn exists(path: &Path, is_dir: bool) -> bool {
-    if is_dir {
-        path.is_dir()
-    } else {
-        path.is_file()
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -105,5 +97,21 @@ mod tests {
         fs::write(tmp.path().join("Makefile"), "").unwrap();
         let result = get_unique_destination_path(tmp.path(), "Makefile", false).unwrap();
         assert_eq!(result, tmp.path().join("Makefile (1)"));
+    }
+
+    #[test]
+    fn file_name_conflicts_with_existing_directory() {
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir(tmp.path().join("report.txt")).unwrap();
+        let result = get_unique_destination_path(tmp.path(), "report.txt", false).unwrap();
+        assert_eq!(result, tmp.path().join("report (1).txt"));
+    }
+
+    #[test]
+    fn directory_name_conflicts_with_existing_file() {
+        let tmp = TempDir::new().unwrap();
+        fs::write(tmp.path().join("archive"), "").unwrap();
+        let result = get_unique_destination_path(tmp.path(), "archive", true).unwrap();
+        assert_eq!(result, tmp.path().join("archive (1)"));
     }
 }
