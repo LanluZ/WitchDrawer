@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
+using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using WitchDrawer.App.Infrastructure;
@@ -64,6 +65,7 @@ public partial class DesktopBoxWindow : Window
         InitializeComponent();
         SourceInitialized += OnSourceInitialized;
         Loaded += OnLoaded;
+        DpiChanged += OnDpiChanged;
         AppThemeManager.ThemeChanged += OnThemeChanged;
         AppThemeManager.CrystalBoxTransparencyChanged += OnCrystalBoxTransparencyChanged;
         Activated += OnWindowActivated;
@@ -124,6 +126,7 @@ public partial class DesktopBoxWindow : Window
     {
         SourceInitialized -= OnSourceInitialized;
         Loaded -= OnLoaded;
+        DpiChanged -= OnDpiChanged;
         AppThemeManager.ThemeChanged -= OnThemeChanged;
         AppThemeManager.CrystalBoxTransparencyChanged -= OnCrystalBoxTransparencyChanged;
         Activated -= OnWindowActivated;
@@ -143,6 +146,7 @@ public partial class DesktopBoxWindow : Window
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
+        UpdateIconDisplayMetrics(VisualTreeHelper.GetDpi(this));
         ResetDragVisualState();
         ClearPendingIconDrag();
         ApplyThemeAppearance();
@@ -156,6 +160,16 @@ public partial class DesktopBoxWindow : Window
             ActiveItemsList.Focus();
         }
         QueueSendToBottom();
+    }
+
+    private void OnDpiChanged(object sender, DpiChangedEventArgs e)
+    {
+        UpdateIconDisplayMetrics(e.NewDpi);
+    }
+
+    private void UpdateIconDisplayMetrics(DpiScale dpi)
+    {
+        ViewModel.UpdateIconDisplayMetrics(dpi.DpiScaleX, dpi.DpiScaleY);
     }
 
     private void OnThemeChanged(object? sender, AppTheme theme)

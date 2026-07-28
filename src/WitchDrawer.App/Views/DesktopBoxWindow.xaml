@@ -541,6 +541,8 @@
                                            Source="{Binding IconImage}"
                                            Stretch="Uniform"
                                            RenderOptions.BitmapScalingMode="HighQuality"
+                                           UseLayoutRounding="True"
+                                           SnapsToDevicePixels="True"
                                            Visibility="{Binding HasIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
                                     
                                     <TextBlock Text="{Binding FallbackIconText}"
@@ -646,6 +648,8 @@
                                        Height="{Binding DataContext.LayoutSettings.MappingListIconSize, RelativeSource={RelativeSource AncestorType={x:Type ListBox}}}"
                                        Stretch="Uniform"
                                        RenderOptions.BitmapScalingMode="HighQuality"
+                                       UseLayoutRounding="True"
+                                       SnapsToDevicePixels="True"
                                        Visibility="{Binding HasIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
                                 <Border Background="{DynamicResource AccentSoftBrush}"
                                         CornerRadius="2"

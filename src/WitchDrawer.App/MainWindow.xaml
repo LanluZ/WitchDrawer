@@ -986,6 +986,8 @@
                                                                        VerticalAlignment="Center"
                                                                        Stretch="Uniform"
                                                                        RenderOptions.BitmapScalingMode="HighQuality"
+                                                                       UseLayoutRounding="True"
+                                                                       SnapsToDevicePixels="True"
                                                                        Visibility="{Binding HasIcon, Converter={StaticResource BooleanToVisibilityConverter}}" />
                                                                 <TextBlock Text="{Binding FallbackIconText}"
                                                                            HorizontalAlignment="Center"

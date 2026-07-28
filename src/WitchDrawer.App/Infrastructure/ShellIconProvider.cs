@@ -12,8 +12,10 @@ namespace WitchDrawer.App.Infrastructure;
 
 public static class ShellIconProvider
 {
+    private const int MaxCachedIconEntries = 512;
     private static readonly ConcurrentDictionary<string, Lazy<Task<ImageSource?>>> IconTasks =
         new(StringComparer.OrdinalIgnoreCase);
+    private static readonly ConcurrentQueue<KeyValuePair<string, Lazy<Task<ImageSource?>>>> IconTaskOrder = new();
 
     private const uint ShgfiIcon = 0x000000100;
     private const uint ShgfiLargeIcon = 0x000000000;
@@ -23,6 +25,7 @@ public static class ShellIconProvider
     private const uint FileAttributeNormal = 0x00000080;
     private const int MaxPath = 260;
     private static readonly Guid ShellLinkClassId = new("00021401-0000-0000-C000-000000000046");
+    private static readonly Guid ShellItemImageFactoryInterfaceId = new("BCC18B79-BA16-442F-80C4-8A59C30C463B");
 
     public static Task<ImageSource?> GetIconAsync(string? path, bool isDirectory, int size)
     {
@@ -32,14 +35,48 @@ public static class ShellIconProvider
         }
 
         var fullPath = Path.GetFullPath(path);
+        size = Math.Clamp(size, 16, 128);
         var cacheKey = $"{(isDirectory ? "D" : "F")}|{size}|{fullPath}";
-        var lazyTask = IconTasks.GetOrAdd(
-            cacheKey,
-            _ => new Lazy<Task<ImageSource?>>(
-                () => LoadIconAsync(cacheKey, fullPath, isDirectory, size),
-                LazyThreadSafetyMode.ExecutionAndPublication));
+        var createdTask = new Lazy<Task<ImageSource?>>(
+            () => LoadIconAsync(cacheKey, fullPath, isDirectory, size),
+            LazyThreadSafetyMode.ExecutionAndPublication);
+        var lazyTask = IconTasks.GetOrAdd(cacheKey, createdTask);
+        var iconTask = lazyTask.Value;
 
-        return lazyTask.Value;
+        if (ReferenceEquals(lazyTask, createdTask))
+        {
+            _ = iconTask.ContinueWith(
+                completedTask => TrackCompletedCacheEntry(cacheKey, createdTask, completedTask.Result),
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnRanToCompletion | TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+        }
+
+        return iconTask;
+    }
+
+    private static void TrackCompletedCacheEntry(
+        string cacheKey,
+        Lazy<Task<ImageSource?>> cacheEntry,
+        ImageSource? icon)
+    {
+        if (icon is null
+            || !IconTasks.TryGetValue(cacheKey, out var currentEntry)
+            || !ReferenceEquals(cacheEntry, currentEntry))
+        {
+            return;
+        }
+
+        IconTaskOrder.Enqueue(new KeyValuePair<string, Lazy<Task<ImageSource?>>>(cacheKey, cacheEntry));
+        TrimIconCache();
+    }
+
+    private static void TrimIconCache()
+    {
+        while (IconTasks.Count > MaxCachedIconEntries && IconTaskOrder.TryDequeue(out var oldest))
+        {
+            IconTasks.TryRemove(oldest);
+        }
     }
 
     private static async Task<ImageSource?> LoadIconAsync(string cacheKey, string fullPath, bool isDirectory, int size)
@@ -75,6 +112,12 @@ public static class ShellIconProvider
             }
         }
 
+        var shellItemIcon = TryGetShellItemIcon(fullPath, size);
+        if (shellItemIcon is not null)
+        {
+            return shellItemIcon;
+        }
+
         var attributes = isDirectory ? FileAttributeDirectory : FileAttributeNormal;
         var flags = GetIconFlags(size);
 
@@ -89,7 +132,9 @@ public static class ShellIconProvider
 
     private static uint GetIconFlags(int size)
     {
-        return ShgfiIcon | (size <= 20 ? ShgfiSmallIcon : ShgfiLargeIcon);
+        // At 20+ physical pixels a 32 px source downsamples more cleanly than
+        // scaling the legacy 16 px small icon up.
+        return ShgfiIcon | (size <= 16 ? ShgfiSmallIcon : ShgfiLargeIcon);
     }
 
     private static bool IsShortcut(string path)
@@ -136,6 +181,12 @@ public static class ShellIconProvider
             }
         }
 
+        var shellItemIcon = TryGetShellItemIcon(candidate.Path, size);
+        if (shellItemIcon is not null)
+        {
+            return shellItemIcon;
+        }
+
         var attributes = Directory.Exists(candidate.Path) ? FileAttributeDirectory : FileAttributeNormal;
         var flags = GetIconFlags(size);
 
@@ -176,6 +227,65 @@ public static class ShellIconProvider
         catch
         {
             return null;
+        }
+    }
+
+    private static ImageSource? TryGetShellItemIcon(string path, int size)
+    {
+        if (!File.Exists(path) && !Directory.Exists(path))
+        {
+            return null;
+        }
+
+        IShellItemImageFactory? imageFactory = null;
+        try
+        {
+            var interfaceId = ShellItemImageFactoryInterfaceId;
+            var result = SHCreateItemFromParsingName(path, nint.Zero, ref interfaceId, out imageFactory);
+            if (result < 0 || imageFactory is null)
+            {
+                return null;
+            }
+
+            result = imageFactory.GetImage(
+                new NativeSize(size, size),
+                ShellItemImageFactoryFlags.BiggerSizeOk | ShellItemImageFactoryFlags.IconOnly,
+                out var bitmapHandle);
+            if (bitmapHandle == nint.Zero)
+            {
+                return null;
+            }
+
+            try
+            {
+                if (result < 0)
+                {
+                    return null;
+                }
+
+                var source = Imaging.CreateBitmapSourceFromHBitmap(
+                    bitmapHandle,
+                    nint.Zero,
+                    Int32Rect.Empty,
+                    BitmapSizeOptions.FromWidthAndHeight(size, size));
+                source.Freeze();
+                return source;
+            }
+            finally
+            {
+                DeleteObject(bitmapHandle);
+            }
+        }
+        catch
+        {
+            return null;
+        }
+        finally
+        {
+            if (imageFactory is not null)
+            {
+                Marshal.ReleaseComObject(imageFactory);
+            }
         }
     }
 
@@ -272,6 +382,13 @@ public static class ShellIconProvider
         uint fileInfoSize,
         uint flags);
 
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = true)]
+    private static extern int SHCreateItemFromParsingName(
+        string path,
+        nint bindContext,
+        ref Guid interfaceId,
+        [MarshalAs(UnmanagedType.Interface)] out IShellItemImageFactory? imageFactory);
+
     // Extracts a specific icon by index from an icon container (.ico/.exe/.dll),
     // which SHGetFileInfo cannot do (it always returns icon #0). Used for shortcut
     // IconLocation values such as "C:\Windows\System32\imageres.dll,109".
@@ -289,7 +406,36 @@ public static class ShellIconProvider
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool DestroyIcon(nint icon);
 
+    [DllImport("gdi32.dll", SetLastError = true)]
+    private static extern bool DeleteObject(nint handle);
+
     private sealed record IconCandidate(string Path, int IconIndex);
+
+    [Flags]
+    private enum ShellItemImageFactoryFlags : uint
+    {
+        BiggerSizeOk = 0x00000001,
+        IconOnly = 0x00000004
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private readonly struct NativeSize(int width, int height)
+    {
+        public readonly int Width = width;
+        public readonly int Height = height;
+    }
+
+    [ComImport]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    [Guid("BCC18B79-BA16-442F-80C4-8A59C30C463B")]
+    private interface IShellItemImageFactory
+    {
+        [PreserveSig]
+        int GetImage(
+            NativeSize size,
+            ShellItemImageFactoryFlags flags,
+            out nint bitmapHandle);
+    }
 
     private sealed record ShortcutDescriptor(string TargetPath, string IconLocation)
     {

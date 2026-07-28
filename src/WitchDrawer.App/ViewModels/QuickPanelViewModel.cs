@@ -1,19 +1,25 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using WitchDrawer.App.Infrastructure;
 using WitchDrawer.Core.Abstractions;
 using WitchDrawer.Core.Logging;
+using WitchDrawer.Core.Models;
 using WitchDrawer.Core.Services;
 
 namespace WitchDrawer.App.ViewModels;
 
 public sealed class QuickPanelViewModel : ObservableObject
 {
+    private const double ItemIconSizeDip = 30;
+
     private readonly DrawerService _drawerService;
     private readonly IFileLauncher _launcher;
     private readonly IAppLogger _logger;
     private List<DrawerItemViewModel> _allItems = [];
     private string _searchText = string.Empty;
+    private double _iconDpiScaleX = 1;
+    private double _iconDpiScaleY = 1;
     private string _statusText = "快速面板";
 
     public QuickPanelViewModel(DrawerService drawerService, IFileLauncher launcher, IAppLogger logger)
@@ -46,18 +52,37 @@ public sealed class QuickPanelViewModel : ObservableObject
         private set => SetProperty(ref _statusText, value);
     }
 
+    public void UpdateIconDisplayMetrics(double dpiScaleX, double dpiScaleY)
+    {
+        _iconDpiScaleX = NormalizeDpiScale(dpiScaleX);
+        _iconDpiScaleY = NormalizeDpiScale(dpiScaleY);
+
+        foreach (var item in _allItems)
+        {
+            item.RequestIconSize(GetIconPixelSize(item.IsPixelated));
+        }
+    }
+
     public async Task LoadAsync()
     {
         try
         {
             var boxes = await _drawerService.GetBoxesAsync();
-            var boxNames = boxes.ToDictionary(box => box.Id, box => box.Name);
+            var boxesById = boxes.ToDictionary(box => box.Id);
             var items = await _drawerService.GetAllItemsAsync();
 
             _allItems = items
-                .Select(item => new DrawerItemViewModel(
-                    item,
-                    boxNames.TryGetValue(item.BoxId, out var boxName) ? boxName : string.Empty))
+                .Select(item =>
+                {
+                    boxesById.TryGetValue(item.BoxId, out var box);
+                    var isPixelated = box?.Type == BoxType.Pixel;
+                    return new DrawerItemViewModel(
+                        item,
+                        box?.Name ?? string.Empty,
+                        isPixelated,
+                        GetIconPixelSize(isPixelated),
+                        _logger);
+                })
                 .ToList();
 
             ApplyFilter();
@@ -67,6 +92,21 @@ public sealed class QuickPanelViewModel : ObservableObject
             _logger.Error(exception, "Failed to load quick panel.");
             StatusText = exception.Message;
         }
+    }
+
+    private int GetIconPixelSize(bool isPixelated)
+    {
+        return DpiAwareIconSize.Calculate(
+            ItemIconSizeDip,
+            ItemIconSizeDip,
+            _iconDpiScaleX,
+            _iconDpiScaleY,
+            isPixelated);
+    }
+
+    private static double NormalizeDpiScale(double value)
+    {
+        return double.IsFinite(value) && value > 0 ? value : 1;
     }
 
     private async Task OpenItemAsync(DrawerItemViewModel? item)

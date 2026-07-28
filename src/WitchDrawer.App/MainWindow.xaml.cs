@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
+using System.Windows.Media;
 using WitchDrawer.App.Infrastructure;
 using WitchDrawer.App.ViewModels;
 using WitchDrawer.App.Views;
@@ -56,6 +57,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         UpdateHotKeyUi("点击按钮可修改");
         Loaded += OnLoaded;
+        DpiChanged += OnDpiChanged;
         AppThemeManager.ThemeChanged += OnThemeChanged;
     }
 
@@ -121,6 +123,7 @@ public partial class MainWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         Loaded -= OnLoaded;
+        DpiChanged -= OnDpiChanged;
         AppThemeManager.ThemeChanged -= OnThemeChanged;
         _source?.RemoveHook(WndProc);
         _hotKey?.Dispose();
@@ -131,8 +134,19 @@ public partial class MainWindow : Window
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
+        UpdateIconDisplayMetrics(VisualTreeHelper.GetDpi(this));
         AppThemeManager.ApplyToWindow(this);
         WindowMotion.PopIn(this, 0.985, 160);
+    }
+
+    private void OnDpiChanged(object sender, DpiChangedEventArgs e)
+    {
+        UpdateIconDisplayMetrics(e.NewDpi);
+    }
+
+    private void UpdateIconDisplayMetrics(DpiScale dpi)
+    {
+        ViewModel.UpdateIconDisplayMetrics(dpi.DpiScaleX, dpi.DpiScaleY);
     }
 
     private void OnThemeChanged(object? sender, AppTheme theme)

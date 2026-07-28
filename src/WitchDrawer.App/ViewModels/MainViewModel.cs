@@ -12,6 +12,7 @@ namespace WitchDrawer.App.ViewModels;
 
 public sealed class MainViewModel : ObservableObject
 {
+    private const double ItemIconSizeDip = 19;
     private const string ThemeSettingKey = "Theme";
     private const string CrystalBoxTransparencySettingKey = "CrystalBoxTransparency";
     private const string StartupRegistryKeyName = "WitchDrawer";
@@ -37,6 +38,8 @@ public sealed class MainViewModel : ObservableObject
     private string _updateStatusText = string.Empty;
     private bool _isCheckingUpdate;
     private string? _pendingUpdateSha256;
+    private double _iconDpiScaleX = 1;
+    private double _iconDpiScaleY = 1;
 
     public MainViewModel(
         DrawerService drawerService,
@@ -101,6 +104,17 @@ public sealed class MainViewModel : ObservableObject
     public ObservableCollection<DrawerItemViewModel> Items { get; } = [];
 
     public ObservableCollection<ArchivedTodoItemViewModel> ArchivedTodos { get; } = [];
+
+    public void UpdateIconDisplayMetrics(double dpiScaleX, double dpiScaleY)
+    {
+        _iconDpiScaleX = NormalizeDpiScale(dpiScaleX);
+        _iconDpiScaleY = NormalizeDpiScale(dpiScaleY);
+
+        foreach (var item in Items)
+        {
+            item.RequestIconSize(GetIconPixelSize(item.IsPixelated));
+        }
+    }
 
     public IAsyncRelayCommand LoadCommand { get; }
 
@@ -533,7 +547,12 @@ public sealed class MainViewModel : ObservableObject
             Items.Clear();
             foreach (var item in items)
             {
-                Items.Add(new DrawerItemViewModel(item, selectedBox.Name, isPixelated));
+                Items.Add(new DrawerItemViewModel(
+                    item,
+                    selectedBox.Name,
+                    isPixelated,
+                    GetIconPixelSize(isPixelated),
+                    _logger));
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -549,6 +568,21 @@ public sealed class MainViewModel : ObservableObject
             _logger.Error(exception, "Failed to load drawer items.");
             StatusText = exception.Message;
         }
+    }
+
+    private int GetIconPixelSize(bool isPixelated)
+    {
+        return DpiAwareIconSize.Calculate(
+            ItemIconSizeDip,
+            ItemIconSizeDip,
+            _iconDpiScaleX,
+            _iconDpiScaleY,
+            isPixelated);
+    }
+
+    private static double NormalizeDpiScale(double value)
+    {
+        return double.IsFinite(value) && value > 0 ? value : 1;
     }
 
     private async Task OpenItemAsync(DrawerItemViewModel? item)
