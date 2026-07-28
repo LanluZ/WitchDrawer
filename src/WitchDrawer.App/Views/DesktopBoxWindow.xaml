@@ -1,6 +1,7 @@
 <Window x:Class="WitchDrawer.App.Views.DesktopBoxWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:infra="clr-namespace:WitchDrawer.App.Infrastructure"
         Title="{Binding Name}"
         Icon="/Assets/app.png"
         SizeToContent="WidthAndHeight"
@@ -522,7 +523,8 @@
                 </ListBox.ItemContainerStyle>
                 <ListBox.ItemTemplate>
                     <DataTemplate>
-                        <Grid ToolTip="{Binding PathLabel}">
+                        <Grid ToolTip="{Binding PathLabel}"
+                              infra:IconLoadBehavior.LoadWhenVisible="True">
                             <!-- 图标卡片背景 -->
                             <Border x:Name="IconBorder"
                                     Width="{Binding DataContext.LayoutSettings.IconFrameSize, RelativeSource={RelativeSource AncestorType={x:Type ListBox}}}"
@@ -634,7 +636,8 @@
                 </ListBox.ItemContainerStyle>
                 <ListBox.ItemTemplate>
                     <DataTemplate>
-                        <Grid ToolTip="{Binding PathLabel}">
+                        <Grid ToolTip="{Binding PathLabel}"
+                              infra:IconLoadBehavior.LoadWhenVisible="True">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="{Binding DataContext.LayoutSettings.MappingListIconColumnWidth, RelativeSource={RelativeSource AncestorType={x:Type ListBox}}}" />
                                 <ColumnDefinition Width="*" />

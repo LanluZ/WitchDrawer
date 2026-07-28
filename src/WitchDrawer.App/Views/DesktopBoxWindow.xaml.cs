@@ -112,11 +112,8 @@ public partial class DesktopBoxWindow : Window
     {
         if (!_forceClose)
         {
-            e.Cancel = true;
             ResetDragVisualState();
             ClearPendingIconDrag();
-            Hide();
-            return;
         }
 
         base.OnClosing(e);
@@ -136,6 +133,7 @@ public partial class DesktopBoxWindow : Window
             Application.Current.Deactivated -= OnApplicationDeactivated;
         }
 
+        ViewModel.ReleaseIcons();
         base.OnClosed(e);
     }
 

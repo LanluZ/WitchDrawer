@@ -263,7 +263,12 @@ public sealed class MainViewModel : ObservableObject
         }
     }
 
-    public async Task LoadAsync()
+    public Task LoadAsync()
+    {
+        return LoadAsync(notifyBoxesChanged: true);
+    }
+
+    public async Task LoadAsync(bool notifyBoxesChanged)
     {
         await RunBusyAsync(async () =>
         {
@@ -282,7 +287,10 @@ public sealed class MainViewModel : ObservableObject
             await RestoreCrystalBoxTransparencyAsync();
 
             StatusText = $"{Boxes.Count} 个收纳盒已同步到桌面";
-            BoxesChanged?.Invoke(this, EventArgs.Empty);
+            if (notifyBoxesChanged)
+            {
+                BoxesChanged?.Invoke(this, EventArgs.Empty);
+            }
         });
     }
 
@@ -304,7 +312,7 @@ public sealed class MainViewModel : ObservableObject
             {
                 await LoadArchivedTodosAsync();
             }
-            await _quickPanelViewModel.LoadAsync();
+            _quickPanelViewModel.Invalidate();
         }
         catch (Exception exception)
         {
@@ -384,7 +392,7 @@ public sealed class MainViewModel : ObservableObject
             }
 
             await LoadItemsForSelectedBoxAsync(selectedBox);
-            await _quickPanelViewModel.LoadAsync();
+            _quickPanelViewModel.Invalidate();
             StatusText = $"已导入 {imported} 项到 {selectedBox.Name}";
             ItemsChanged?.Invoke(this, EventArgs.Empty);
         });
@@ -436,7 +444,7 @@ public sealed class MainViewModel : ObservableObject
                     ? Boxes.FirstOrDefault()
                     : Boxes.FirstOrDefault(box => box.Id == result.BoxId) ?? Boxes.FirstOrDefault());
 
-            await _quickPanelViewModel.LoadAsync();
+            _quickPanelViewModel.Invalidate();
             StatusText = result.StatusMessage;
             BoxesChanged?.Invoke(this, EventArgs.Empty);
             ItemsChanged?.Invoke(this, EventArgs.Empty);
@@ -464,7 +472,7 @@ public sealed class MainViewModel : ObservableObject
 
             await SelectBoxAsync(Boxes.FirstOrDefault(b => b.Id == selectedBox.Id) ?? Boxes.FirstOrDefault());
 
-            await _quickPanelViewModel.LoadAsync();
+            _quickPanelViewModel.Invalidate();
             StatusText = $"已重命名收纳盒为 {newName.Trim()}";
             BoxesChanged?.Invoke(this, EventArgs.Empty);
         });
@@ -610,7 +618,7 @@ public sealed class MainViewModel : ObservableObject
         {
             var result = await _drawerService.DeleteItemAsync(item.Id);
             await LoadItemsForSelectedBoxAsync(SelectedBox);
-            await _quickPanelViewModel.LoadAsync();
+            _quickPanelViewModel.Invalidate();
             StatusText = result.StatusMessage;
             ItemsChanged?.Invoke(this, EventArgs.Empty);
         });

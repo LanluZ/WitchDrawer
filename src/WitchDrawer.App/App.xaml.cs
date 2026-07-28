@@ -26,6 +26,11 @@ public partial class App : Application
     private CancellationTokenSource? _singleInstancePipeCts;
     private TaskbarIcon? _taskbarIcon;
     private MainWindow? _mainWindow;
+    private Func<MainWindow>? _mainWindowFactory;
+    private MainViewModel? _mainViewModel;
+    private Task? _mainViewModelLoadTask;
+    private QuickPanelWindowHost? _quickPanelWindowHost;
+    private QuickPanelHotKeyService? _quickPanelHotKeyService;
     private DesktopBoxManager? _desktopBoxManager;
     private RustDrawerService? _rustDrawerService;
 
@@ -65,7 +70,7 @@ public partial class App : Application
             AppThemeManager.Apply(await LoadSavedThemeAsync(drawerService));
 
             var quickPanelViewModel = new QuickPanelViewModel(drawerService, launcher, logger);
-            var quickPanel = new QuickPanelWindow(quickPanelViewModel);
+            _quickPanelWindowHost = new QuickPanelWindowHost(() => new QuickPanelWindow(quickPanelViewModel));
             var mainViewModel = new MainViewModel(
                 drawerService,
                 todoService,
@@ -73,23 +78,27 @@ public partial class App : Application
                 logger,
                 quickPanelViewModel,
                 updateService);
+            _mainViewModel = mainViewModel;
             _desktopBoxManager = new DesktopBoxManager(
                 drawerService,
                 todoService,
                 launcher,
                 logger);
-            _mainWindow = new MainWindow(
-                mainViewModel,
-                quickPanel,
-                logger,
+            _quickPanelHotKeyService = new QuickPanelHotKeyService(
                 quickPanelHotKeySettings,
-                quickPanelHotKey);
+                quickPanelHotKey,
+                logger);
+            _quickPanelHotKeyService.Pressed += OnQuickPanelHotKeyPressed;
+            _mainWindowFactory = () => new MainWindow(
+                mainViewModel,
+                logger,
+                _quickPanelHotKeyService);
             StartSingleInstanceServer(logger);
 
             mainViewModel.BoxesChanged += async (_, _) => await _desktopBoxManager.RefreshAsync();
             mainViewModel.ItemsChanged += async (_, _) =>
             {
-                await quickPanelViewModel.LoadAsync();
+                quickPanelViewModel.Invalidate();
                 await _desktopBoxManager.RefreshItemsAsync();
             };
             _desktopBoxManager.ItemsChanged += async (_, _) =>
@@ -97,9 +106,6 @@ public partial class App : Application
                 // Desktop boxes already mutated their own UI; only sync main/quick panel.
                 await mainViewModel.ReloadItemsFromDesktopAsync();
             };
-            _mainWindow.ReopenBoxRequested += async (_, boxId) => await _desktopBoxManager.ShowAsync(boxId);
-            _mainWindow.Closed += async (_, _) => await _desktopBoxManager.CloseAllAsync();
-
             mainViewModel.UpdateRequested += async (_, result) =>
             {
                 var versionText = $"v{result.LatestVersion.Major}.{result.LatestVersion.Minor}.{result.LatestVersion.Build}";
@@ -122,18 +128,11 @@ public partial class App : Application
 
             InitializeTaskbarIcon(paths, logger);
 
-            MainWindow = _mainWindow;
             var silentStart = Array.IndexOf(Environment.GetCommandLineArgs(), "--silent") >= 0;
-            if (silentStart)
+            if (!silentStart)
             {
-                _mainWindow.MinimizeToTray();
+                await ShowMainWindowAsync();
             }
-            else
-            {
-                _mainWindow.Show();
-            }
-            await mainViewModel.LoadAsync();
-            await quickPanelViewModel.LoadAsync();
             await _desktopBoxManager.RefreshAsync();
             logger.Info("Application startup complete.");
         }
@@ -240,7 +239,49 @@ public partial class App : Application
 
     private void ActivateExistingMainWindow()
     {
-        _mainWindow?.RestoreFromTray();
+        _ = ShowMainWindowAsync();
+    }
+
+    private MainWindow EnsureMainWindowCreated()
+    {
+        if (_mainWindow is not null)
+        {
+            return _mainWindow;
+        }
+
+        _mainWindow = _mainWindowFactory?.Invoke()
+            ?? throw new InvalidOperationException("Main window factory is not initialized.");
+        _mainWindow.ReopenBoxRequested += async (_, boxId) =>
+        {
+            if (_desktopBoxManager is not null)
+            {
+                await _desktopBoxManager.ShowAsync(boxId);
+            }
+        };
+        MainWindow = _mainWindow;
+        return _mainWindow;
+    }
+
+    private async Task ShowMainWindowAsync()
+    {
+        var window = EnsureMainWindowCreated();
+        window.RestoreFromTray();
+
+        if (_mainViewModel is not null)
+        {
+            _mainViewModelLoadTask ??= _mainViewModel.LoadAsync(notifyBoxesChanged: false);
+            await _mainViewModelLoadTask;
+        }
+    }
+
+    private void OnQuickPanelHotKeyPressed(object? sender, EventArgs e)
+    {
+        if (_quickPanelWindowHost is null)
+        {
+            return;
+        }
+
+        _ = Dispatcher.InvokeAsync(async () => await _quickPanelWindowHost.ToggleAsync());
     }
 
     private void InitializeTaskbarIcon(AppPaths paths, IAppLogger logger)
@@ -261,30 +302,20 @@ public partial class App : Application
 
         _taskbarIcon.LeftClick += (_, _) =>
         {
-            if (_mainWindow is null)
-            {
-                return;
-            }
-
-            if (_mainWindow.IsVisible)
+            if (_mainWindow?.IsVisible == true)
             {
                 _mainWindow.MinimizeToTray();
             }
             else
             {
-                _mainWindow.RestoreFromTray();
+                _ = ShowMainWindowAsync();
             }
         };
 
         _taskbarIcon.RightClick += (_, _) =>
         {
-            if (_mainWindow is null)
-            {
-                return;
-            }
-
             var menu = CreatePopupMenu();
-            var showOrHideText = _mainWindow.IsVisible ? "隐藏主窗口" : "显示主窗口";
+            var showOrHideText = _mainWindow?.IsVisible == true ? "隐藏主窗口" : "显示主窗口";
             AppendMenuW(menu, 0, 1, showOrHideText);
             AppendMenuW(menu, 0, 2, "退出 WitchDrawer");
 
@@ -298,18 +329,13 @@ public partial class App : Application
             switch (e.CommandId)
             {
                 case 1:
-                    if (_mainWindow is null)
-                    {
-                        return;
-                    }
-
-                    if (_mainWindow.IsVisible)
+                    if (_mainWindow?.IsVisible == true)
                     {
                         _mainWindow.MinimizeToTray();
                     }
                     else
                     {
-                        _mainWindow.RestoreFromTray();
+                        _ = ShowMainWindowAsync();
                     }
                     break;
                 case 2:
@@ -325,6 +351,9 @@ public partial class App : Application
     {
         _taskbarIcon?.Dispose();
         _taskbarIcon = null;
+        _quickPanelWindowHost?.Close();
+        _quickPanelHotKeyService?.Dispose();
+        _quickPanelHotKeyService = null;
         _desktopBoxManager?.CloseAllAsync().GetAwaiter().GetResult();
 
         if (_mainWindow is not null)
@@ -340,6 +369,8 @@ public partial class App : Application
         _singleInstancePipeCts?.Cancel();
         _singleInstancePipeCts?.Dispose();
         _taskbarIcon?.Dispose();
+        _quickPanelWindowHost?.Close();
+        _quickPanelHotKeyService?.Dispose();
         _rustDrawerService?.Dispose();
         _singleInstanceMutex?.Dispose();
         base.OnExit(e);

@@ -12,10 +12,12 @@ namespace WitchDrawer.App.Infrastructure;
 
 public static class ShellIconProvider
 {
-    private const int MaxCachedIconEntries = 512;
+    internal const long MaxCachedIconBytes = 12 * 1024 * 1024;
+    private const int MaxCachedIconEntries = 4096;
     private static readonly ConcurrentDictionary<string, Lazy<Task<ImageSource?>>> IconTasks =
         new(StringComparer.OrdinalIgnoreCase);
-    private static readonly ConcurrentQueue<KeyValuePair<string, Lazy<Task<ImageSource?>>>> IconTaskOrder = new();
+    private static readonly ConcurrentQueue<CachedIconEntry> IconTaskOrder = new();
+    private static long _estimatedCachedIconBytes;
 
     private const uint ShgfiIcon = 0x000000100;
     private const uint ShgfiLargeIcon = 0x000000000;
@@ -70,17 +72,42 @@ public static class ShellIconProvider
             return;
         }
 
-        IconTaskOrder.Enqueue(new KeyValuePair<string, Lazy<Task<ImageSource?>>>(cacheKey, cacheEntry));
+        var estimatedBytes = EstimateIconBytes(icon);
+        IconTaskOrder.Enqueue(new CachedIconEntry(cacheKey, cacheEntry, estimatedBytes));
+        Interlocked.Add(ref _estimatedCachedIconBytes, estimatedBytes);
         TrimIconCache();
     }
 
     private static void TrimIconCache()
     {
-        while (IconTasks.Count > MaxCachedIconEntries && IconTaskOrder.TryDequeue(out var oldest))
+        while ((IconTasks.Count > MaxCachedIconEntries
+                || Volatile.Read(ref _estimatedCachedIconBytes) > MaxCachedIconBytes)
+               && IconTaskOrder.TryDequeue(out var oldest))
         {
-            IconTasks.TryRemove(oldest);
+            if (IconTasks.TryRemove(
+                    new KeyValuePair<string, Lazy<Task<ImageSource?>>>(oldest.CacheKey, oldest.CacheEntry)))
+            {
+                Interlocked.Add(ref _estimatedCachedIconBytes, -oldest.EstimatedBytes);
+            }
         }
     }
+
+    internal static long EstimateIconBytes(ImageSource icon)
+    {
+        if (icon is not BitmapSource bitmap)
+        {
+            return 4 * 32 * 32;
+        }
+
+        var bitsPerPixel = Math.Max(1, bitmap.Format.BitsPerPixel);
+        var stride = ((long)bitmap.PixelWidth * bitsPerPixel + 7) / 8;
+        return Math.Max(1, stride * bitmap.PixelHeight);
+    }
+
+    private readonly record struct CachedIconEntry(
+        string CacheKey,
+        Lazy<Task<ImageSource?>> CacheEntry,
+        long EstimatedBytes);
 
     private static async Task<ImageSource?> LoadIconAsync(string cacheKey, string fullPath, bool isDirectory, int size)
     {
