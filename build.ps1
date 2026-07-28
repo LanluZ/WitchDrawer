@@ -41,11 +41,11 @@ if ($LASTEXITCODE -ne 0) { throw ".NET build failed" }
 # Step 3: Run tests
 if (-not $SkipTests) {
     Write-Host "`n[3/3] Running tests..." -ForegroundColor Yellow
-    
+
     dotnet test $Solution -c $Configuration --no-build --verbosity minimal
     if ($LASTEXITCODE -ne 0) { throw ".NET tests failed" }
     Write-Host "  -> .NET tests passed" -ForegroundColor Green
-    
+
     Push-Location $RustDir
     try {
         cargo test --lib
