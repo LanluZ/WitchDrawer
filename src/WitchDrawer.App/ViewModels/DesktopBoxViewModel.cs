@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using WitchDrawer.App.Infrastructure;
 using WitchDrawer.Core.Abstractions;
 using WitchDrawer.Core.Logging;
 using WitchDrawer.Core.Models;
@@ -35,6 +36,8 @@ public sealed class DesktopBoxViewModel : ObservableObject
     private bool _isDragOver;
     private bool _isMappingListMode;
     private string _newTodoTitle = string.Empty;
+    private double _iconDpiScaleX = 1;
+    private double _iconDpiScaleY = 1;
 
     public DesktopBoxViewModel(
         Box box,
@@ -212,6 +215,14 @@ public sealed class DesktopBoxViewModel : ObservableObject
         OnPropertyChanged(nameof(ShowFileEmptyState));
         AddTodoCommand.NotifyCanExecuteChanged();
         ArchiveCompletedTodosCommand.NotifyCanExecuteChanged();
+        UpdateItemIconSizes();
+    }
+
+    public void UpdateIconDisplayMetrics(double dpiScaleX, double dpiScaleY)
+    {
+        _iconDpiScaleX = NormalizeDpiScale(dpiScaleX);
+        _iconDpiScaleY = NormalizeDpiScale(dpiScaleY);
+        UpdateItemIconSizes();
     }
 
     public (int Column, int Row) GetGridSlot(
@@ -350,11 +361,16 @@ public sealed class DesktopBoxViewModel : ObservableObject
                     var existing = Items.FirstOrDefault(x => x.Id == items[i].Id);
                     var position = positions[items[i].Id];
                     existing?.SetGridPosition(position.Column, position.Row, LayoutSettings);
-                    existing?.ReloadIconIfNeeded();
+                    existing?.RequestIconSize(GetIconPixelSize(isPixelated));
                     continue;
                 }
 
-                var itemViewModel = new DrawerItemViewModel(items[i], Name, isPixelated);
+                var itemViewModel = new DrawerItemViewModel(
+                    items[i],
+                    Name,
+                    isPixelated,
+                    GetIconPixelSize(isPixelated),
+                    _logger);
                 var itemPosition = positions[items[i].Id];
                 itemViewModel.SetGridPosition(itemPosition.Column, itemPosition.Row, LayoutSettings);
                 Items.Insert(i, itemViewModel);
@@ -650,6 +666,7 @@ public sealed class DesktopBoxViewModel : ObservableObject
         {
             OnPropertyChanged(nameof(IsGridMode));
             HideDragPreview();
+            UpdateItemIconSizes();
         }
     }
 
@@ -813,6 +830,35 @@ public sealed class DesktopBoxViewModel : ObservableObject
             item.UpdateCanvasPosition(LayoutSettings);
         }
 
+        UpdateItemIconSizes();
         UpdateGridCanvasSize();
+    }
+
+    private void UpdateItemIconSizes()
+    {
+        var iconPixelSize = GetIconPixelSize(Type == BoxType.Pixel);
+        foreach (var item in Items)
+        {
+            item.RequestIconSize(iconPixelSize);
+        }
+    }
+
+    private int GetIconPixelSize(bool isPixelated)
+    {
+        var displaySizeDip = IsMappingListMode
+            ? LayoutSettings.MappingListIconSize
+            : LayoutSettings.IconSize;
+
+        return DpiAwareIconSize.Calculate(
+            displaySizeDip,
+            displaySizeDip,
+            _iconDpiScaleX,
+            _iconDpiScaleY,
+            isPixelated);
+    }
+
+    private static double NormalizeDpiScale(double value)
+    {
+        return double.IsFinite(value) && value > 0 ? value : 1;
     }
 }

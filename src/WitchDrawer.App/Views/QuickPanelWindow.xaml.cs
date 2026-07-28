@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using WitchDrawer.App.Infrastructure;
 using WitchDrawer.App.ViewModels;
 
@@ -16,6 +17,7 @@ public partial class QuickPanelWindow : Window
         DataContext = viewModel;
         InitializeComponent();
         Loaded += OnLoaded;
+        DpiChanged += OnDpiChanged;
         AppThemeManager.ThemeChanged += OnThemeChanged;
     }
 
@@ -58,13 +60,25 @@ public partial class QuickPanelWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         Loaded -= OnLoaded;
+        DpiChanged -= OnDpiChanged;
         AppThemeManager.ThemeChanged -= OnThemeChanged;
         base.OnClosed(e);
     }
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
+        UpdateIconDisplayMetrics(VisualTreeHelper.GetDpi(this));
         AppThemeManager.ApplyToWindow(this);
+    }
+
+    private void OnDpiChanged(object sender, DpiChangedEventArgs e)
+    {
+        UpdateIconDisplayMetrics(e.NewDpi);
+    }
+
+    private void UpdateIconDisplayMetrics(DpiScale dpi)
+    {
+        ViewModel.UpdateIconDisplayMetrics(dpi.DpiScaleX, dpi.DpiScaleY);
     }
 
     private void OnThemeChanged(object? sender, AppTheme theme)

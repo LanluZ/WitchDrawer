@@ -2,9 +2,9 @@ using System.IO;
 using System.Threading;
 using System.Windows;
 using System.Windows.Media;
-using System.Windows.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using WitchDrawer.App.Infrastructure;
+using WitchDrawer.Core.Logging;
 using WitchDrawer.Core.Models;
 
 namespace WitchDrawer.App.ViewModels;
@@ -16,6 +16,8 @@ public sealed class DrawerItemViewModel : ObservableObject
     private ImageSource? _iconImage;
     private bool _hasIcon;
     private int _isLoadingIcon;
+    private int _requestedIconPixelSize;
+    private int _loadedIconPixelSize;
     private int _gridColumn;
     private int _gridRow;
     private double _gridLeft;
@@ -25,12 +27,20 @@ public sealed class DrawerItemViewModel : ObservableObject
     private double _tempOffsetY;
 
     private readonly bool _isPixelated;
+    private readonly IAppLogger? _logger;
 
-    public DrawerItemViewModel(DrawerItem model, string? boxName = null, bool isPixelated = false)
+    public DrawerItemViewModel(
+        DrawerItem model,
+        string? boxName = null,
+        bool isPixelated = false,
+        int iconPixelSize = 32,
+        IAppLogger? logger = null)
     {
         Model = model;
         BoxName = boxName ?? string.Empty;
         _isPixelated = isPixelated;
+        _logger = logger;
+        _requestedIconPixelSize = Math.Clamp(iconPixelSize, 16, 128);
         _gridColumn = Math.Max(0, model.GridColumn ?? 0);
         _gridRow = Math.Max(0, model.GridRow ?? 0);
         _ = LoadIconAsync();
@@ -74,6 +84,8 @@ public sealed class DrawerItemViewModel : ObservableObject
     }
 
     public string BoxName { get; }
+
+    public bool IsPixelated => _isPixelated;
 
     public int GridColumn
     {
@@ -133,6 +145,16 @@ public sealed class DrawerItemViewModel : ObservableObject
         }
     }
 
+    public void RequestIconSize(int iconPixelSize)
+    {
+        var normalizedSize = Math.Clamp(iconPixelSize, 16, 128);
+        var previousSize = Interlocked.Exchange(ref _requestedIconPixelSize, normalizedSize);
+        if (previousSize != normalizedSize || !HasIcon)
+        {
+            _ = LoadIconAsync();
+        }
+    }
+
     public void SetGridPosition(int column, int row, DesktopBoxLayoutSettings layoutSettings)
     {
         GridColumn = column;
@@ -163,57 +185,121 @@ public sealed class DrawerItemViewModel : ObservableObject
         var path = PathLabel;
         if (string.IsNullOrWhiteSpace(path))
         {
+            Volatile.Write(ref _loadedIconPixelSize, Volatile.Read(ref _requestedIconPixelSize));
             Interlocked.Exchange(ref _isLoadingIcon, 0);
             return;
         }
 
+        var attemptedSize = Volatile.Read(ref _requestedIconPixelSize);
         try
         {
-            for (var attempt = 1; attempt <= MaxIconLoadAttempts; attempt++)
+            while (true)
+            {
+                var requestedSize = Volatile.Read(ref _requestedIconPixelSize);
+                attemptedSize = requestedSize;
+                var (icon, terminalException) = await LoadIconWithRetriesAsync(
+                    path,
+                    Model.ItemKind == ItemKind.Directory,
+                    requestedSize).ConfigureAwait(false);
+
+                if (requestedSize != Volatile.Read(ref _requestedIconPixelSize))
+                {
+                    continue;
+                }
+
+                await SetIconOnUiThreadAsync(icon);
+                Volatile.Write(ref _loadedIconPixelSize, requestedSize);
+
+                if (terminalException is not null)
+                {
+                    _logger?.Error(
+                        terminalException,
+                        $"Failed to load icon for drawer item {Id:D} at {requestedSize}px.");
+                }
+
+                return;
+            }
+        }
+        catch (Exception exception)
+        {
+            if (attemptedSize == Volatile.Read(ref _requestedIconPixelSize))
             {
                 try
                 {
-                    var isDirectory = Model.ItemKind == ItemKind.Directory;
-                    var icon = await ShellIconProvider.GetIconAsync(path, isDirectory, 32).ConfigureAwait(false);
-
-                    if (_isPixelated && icon is BitmapSource bitmapSource)
-                    {
-                        var scaleX = 16.0 / bitmapSource.PixelWidth;
-                        var scaleY = 16.0 / bitmapSource.PixelHeight;
-                        var scale = new ScaleTransform(scaleX, scaleY);
-                        scale.Freeze();
-                        var transformed = new TransformedBitmap(bitmapSource, scale);
-                        transformed.Freeze();
-                        icon = transformed;
-                    }
-
-                    if (icon is not null || attempt == MaxIconLoadAttempts)
-                    {
-                        await Application.Current.Dispatcher.InvokeAsync(() =>
-                        {
-                            IconImage = icon;
-                        });
-                        return;
-                    }
+                    await SetIconOnUiThreadAsync(null);
                 }
-                catch when (attempt < MaxIconLoadAttempts)
+                catch
                 {
+                    // The WPF dispatcher can be unavailable while the app is shutting down.
                 }
-
-                await Task.Delay(150 * attempt).ConfigureAwait(false);
             }
-        }
-        catch
-        {
-            await Application.Current.Dispatcher.InvokeAsync(() =>
-            {
-                IconImage = null;
-            });
+
+            Volatile.Write(ref _loadedIconPixelSize, attemptedSize);
+            _logger?.Error(
+                exception,
+                $"Unexpected icon loading failure for drawer item {Id:D} at {attemptedSize}px.");
         }
         finally
         {
             Interlocked.Exchange(ref _isLoadingIcon, 0);
+            if (Volatile.Read(ref _requestedIconPixelSize) != Volatile.Read(ref _loadedIconPixelSize))
+            {
+                _ = LoadIconAsync();
+            }
         }
+    }
+
+    private async Task<(ImageSource? Icon, Exception? TerminalException)> LoadIconWithRetriesAsync(
+        string path,
+        bool isDirectory,
+        int requestedSize)
+    {
+        Exception? terminalException = null;
+
+        for (var attempt = 1; attempt <= MaxIconLoadAttempts; attempt++)
+        {
+            try
+            {
+                var icon = await ShellIconProvider
+                    .GetIconAsync(path, isDirectory, requestedSize)
+                    .ConfigureAwait(false);
+                terminalException = null;
+
+                if (icon is not null || attempt == MaxIconLoadAttempts)
+                {
+                    return (icon, null);
+                }
+            }
+            catch (Exception exception)
+            {
+                terminalException = exception;
+                if (attempt == MaxIconLoadAttempts)
+                {
+                    break;
+                }
+            }
+
+            if (requestedSize != Volatile.Read(ref _requestedIconPixelSize))
+            {
+                break;
+            }
+
+            await Task.Delay(150 * attempt).ConfigureAwait(false);
+        }
+
+        return (null, terminalException);
+    }
+
+    private async Task SetIconOnUiThreadAsync(ImageSource? icon)
+    {
+        var application = Application.Current;
+        if (application is null || application.Dispatcher.CheckAccess())
+        {
+            IconImage = icon;
+            return;
+        }
+
+        await application.Dispatcher.InvokeAsync(() => IconImage = icon);
     }
 
     private string GetFallbackExtension()
