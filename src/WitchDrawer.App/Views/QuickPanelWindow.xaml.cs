@@ -8,7 +8,7 @@ using WitchDrawer.App.ViewModels;
 
 namespace WitchDrawer.App.Views;
 
-public partial class QuickPanelWindow : Window
+public partial class QuickPanelWindow : Window, IQuickPanelWindow
 {
     private bool _forceClose;
 
@@ -27,12 +27,13 @@ public partial class QuickPanelWindow : Window
     {
         if (IsVisible && IsActive)
         {
-            Hide();
+            HidePanel();
             return;
         }
 
         await ViewModel.LoadAsync();
         Show();
+        _ = Dispatcher.BeginInvoke(() => IconLoadBehavior.RequestIconsForRealizedItems(QuickItems));
         WindowMotion.PopIn(this, 0.97, 130);
         Activate();
         SearchBox.Focus();
@@ -50,7 +51,7 @@ public partial class QuickPanelWindow : Window
         if (!_forceClose)
         {
             e.Cancel = true;
-            Hide();
+            HidePanel();
             return;
         }
 
@@ -62,6 +63,7 @@ public partial class QuickPanelWindow : Window
         Loaded -= OnLoaded;
         DpiChanged -= OnDpiChanged;
         AppThemeManager.ThemeChanged -= OnThemeChanged;
+        ViewModel.ReleaseIcons();
         base.OnClosed(e);
     }
 
@@ -102,7 +104,7 @@ public partial class QuickPanelWindow : Window
             if (item?.DataContext is DrawerItemViewModel drawerItem)
             {
                 await ViewModel.OpenItemCommand.ExecuteAsync(drawerItem);
-                Hide();
+                HidePanel();
             }
         }
     }
@@ -111,7 +113,7 @@ public partial class QuickPanelWindow : Window
     {
         if (e.Key == Key.Escape)
         {
-            Hide();
+            HidePanel();
             e.Handled = true;
             return;
         }
@@ -126,7 +128,7 @@ public partial class QuickPanelWindow : Window
             if (item is not null)
             {
                 await ViewModel.OpenItemCommand.ExecuteAsync(item);
-                Hide();
+                HidePanel();
                 e.Handled = true;
             }
             return;
@@ -160,5 +162,11 @@ public partial class QuickPanelWindow : Window
             }
             e.Handled = true;
         }
+    }
+
+    private void HidePanel()
+    {
+        IconLoadBehavior.ReleaseIconsForRealizedItems(QuickItems);
+        Hide();
     }
 }

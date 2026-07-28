@@ -13,6 +13,7 @@ namespace WitchDrawer.App.Infrastructure;
 public sealed class DesktopBoxManager
 {
     private const string BoxPositionSettingPrefix = "BoxPosition:";
+    private const string BoxVisibilitySettingPrefix = "BoxDesktopVisible:";
     private const char PositionSeparator = ',';
 
     private readonly IDrawerService _drawerService;
@@ -20,6 +21,9 @@ public sealed class DesktopBoxManager
     private readonly IFileLauncher _launcher;
     private readonly IAppLogger _logger;
     private readonly Dictionary<Guid, DesktopBoxWindow> _windows = [];
+    private readonly HashSet<Guid> _closedBoxIds = [];
+    private readonly HashSet<Guid> _visibilityLoadedBoxIds = [];
+    private readonly Dictionary<Guid, Task> _closedStateSaveTasks = [];
     private bool _closing;
     private GuideLineWindow? _verticalGuide;
     private GuideLineWindow? _horizontalGuide;
@@ -68,12 +72,13 @@ public sealed class DesktopBoxManager
             }
 
             var boxIds = boxes.Select(box => box.Id).ToHashSet();
+            _closedBoxIds.RemoveWhere(id => !boxIds.Contains(id));
+            _visibilityLoadedBoxIds.RemoveWhere(id => !boxIds.Contains(id));
 
             foreach (var removedId in _windows.Keys.Where(id => !boxIds.Contains(id)).ToArray())
             {
                 var win = _windows[removedId];
-                win.LocationChanged -= OnWindowLocationChanged;
-                win.PreviewMouseLeftButtonUp -= OnWindowMouseUp;
+                DetachWindow(win);
                 win.ForceClose();
                 _windows.Remove(removedId);
             }
@@ -88,6 +93,12 @@ public sealed class DesktopBoxManager
                 var box = boxes[index];
                 if (!_windows.TryGetValue(box.Id, out var window))
                 {
+                    await LoadBoxVisibilityAsync(box.Id);
+                    if (_closedBoxIds.Contains(box.Id))
+                    {
+                        continue;
+                    }
+
                     var layoutSettings = new DesktopBoxLayoutSettings();
                     var savedPreset = await _drawerService.GetSettingAsync(
                         BoxViewModel.GetLayoutPresetSettingKey(box.Id));
@@ -108,6 +119,7 @@ public sealed class DesktopBoxManager
 
                     window.LocationChanged += OnWindowLocationChanged;
                     window.PreviewMouseLeftButtonUp += OnWindowMouseUp;
+                    window.Closed += OnWindowClosed;
                     window.SetPositionChangedCallback(async (id) =>
                     {
                         _isAdjustingPosition = true;
@@ -181,9 +193,7 @@ public sealed class DesktopBoxManager
     }
 
     /// <summary>
-    /// Reopens the desktop window for a box that was hidden via its close (X)
-    /// button. If the window still exists in memory it is simply shown again;
-    /// otherwise a full refresh is triggered so it gets recreated.
+    /// Recreates a desktop window that was closed via its close (X) button.
     /// </summary>
     /// <returns><see langword="true"/> if a window was shown; <see langword="false"/> otherwise.</returns>
     public async Task<bool> ShowAsync(Guid boxId)
@@ -193,15 +203,23 @@ public sealed class DesktopBoxManager
             return false;
         }
 
-        if (_windows.TryGetValue(boxId, out var window) && !window.IsVisible)
+        if (_windows.TryGetValue(boxId, out var window))
         {
-            window.Show();
+            if (!window.IsVisible)
+            {
+                window.Show();
+            }
             window.QueueSendToBottom();
             return true;
         }
 
-        // Window was destroyed (e.g. fully closed) or never created this session:
-        // refresh so the box window is recreated for the current box set.
+        _closedBoxIds.Remove(boxId);
+        _visibilityLoadedBoxIds.Add(boxId);
+        if (_closedStateSaveTasks.TryGetValue(boxId, out var pendingSave))
+        {
+            await pendingSave;
+        }
+        await PersistBoxVisibilityAsync(boxId, isVisible: true);
         await RefreshAsync();
         return _windows.TryGetValue(boxId, out var refreshed) && refreshed.IsVisible;
     }
@@ -222,10 +240,10 @@ public sealed class DesktopBoxManager
     {
         _closing = true;
         await SaveAllPositionsAsync();
+        await Task.WhenAll(_closedStateSaveTasks.Values.ToArray());
         foreach (var window in _windows.Values)
         {
-            window.LocationChanged -= OnWindowLocationChanged;
-            window.PreviewMouseLeftButtonUp -= OnWindowMouseUp;
+            DetachWindow(window);
             window.ForceClose();
         }
 
@@ -334,6 +352,94 @@ public sealed class DesktopBoxManager
         if (sender is DesktopBoxWindow window)
         {
             _ = SavePositionAsync(window.ViewModel.BoxId);
+        }
+    }
+
+    private void OnWindowClosed(object? sender, EventArgs e)
+    {
+        if (sender is not DesktopBoxWindow window)
+        {
+            return;
+        }
+
+        var boxId = window.ViewModel.BoxId;
+        var left = window.Left;
+        var top = window.Top;
+        DetachWindow(window);
+        if (_windows.TryGetValue(boxId, out var current) && ReferenceEquals(current, window))
+        {
+            _windows.Remove(boxId);
+            if (!_closing)
+            {
+                _closedBoxIds.Add(boxId);
+                _visibilityLoadedBoxIds.Add(boxId);
+                var saveTask = SaveClosedWindowStateAsync(boxId, left, top);
+                _closedStateSaveTasks[boxId] = saveTask;
+                _ = RemoveCompletedClosedStateSaveAsync(boxId, saveTask);
+            }
+        }
+    }
+
+    private void DetachWindow(DesktopBoxWindow window)
+    {
+        window.LocationChanged -= OnWindowLocationChanged;
+        window.PreviewMouseLeftButtonUp -= OnWindowMouseUp;
+        window.Closed -= OnWindowClosed;
+    }
+
+    private async Task SaveClosedWindowStateAsync(Guid boxId, double left, double top)
+    {
+        try
+        {
+            var key = BoxPositionSettingPrefix + boxId.ToString("N");
+            var value = $"{left}{PositionSeparator}{top}";
+            await _drawerService.SetSettingAsync(key, value);
+            await _drawerService.SetSettingAsync(
+                BoxVisibilitySettingPrefix + boxId.ToString("N"),
+                bool.FalseString);
+        }
+        catch (Exception exception)
+        {
+            _logger.Error(exception, $"Failed to save position for closed desktop box {boxId:D}.");
+        }
+    }
+
+    private async Task RemoveCompletedClosedStateSaveAsync(Guid boxId, Task saveTask)
+    {
+        await saveTask;
+        if (_closedStateSaveTasks.TryGetValue(boxId, out var current)
+            && ReferenceEquals(current, saveTask))
+        {
+            _closedStateSaveTasks.Remove(boxId);
+        }
+    }
+
+    private async Task LoadBoxVisibilityAsync(Guid boxId)
+    {
+        if (!_visibilityLoadedBoxIds.Add(boxId))
+        {
+            return;
+        }
+
+        var savedValue = await _drawerService.GetSettingAsync(
+            BoxVisibilitySettingPrefix + boxId.ToString("N"));
+        if (bool.TryParse(savedValue, out var isVisible) && !isVisible)
+        {
+            _closedBoxIds.Add(boxId);
+        }
+    }
+
+    private async Task PersistBoxVisibilityAsync(Guid boxId, bool isVisible)
+    {
+        try
+        {
+            await _drawerService.SetSettingAsync(
+                BoxVisibilitySettingPrefix + boxId.ToString("N"),
+                isVisible.ToString());
+        }
+        catch (Exception exception)
+        {
+            _logger.Error(exception, $"Failed to save visibility for desktop box {boxId:D}.");
         }
     }
 

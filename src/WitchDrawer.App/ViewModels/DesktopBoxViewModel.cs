@@ -74,6 +74,14 @@ public sealed class DesktopBoxViewModel : ObservableObject
 
     public ObservableCollection<DrawerItemViewModel> Items { get; } = [];
 
+    public void ReleaseIcons()
+    {
+        foreach (var item in Items)
+        {
+            item.ReleaseIcon();
+        }
+    }
+
     public ObservableCollection<TodoItemViewModel> TodoItems { get; } = [];
 
     public IAsyncRelayCommand<DrawerItemViewModel?> OpenItemCommand { get; }

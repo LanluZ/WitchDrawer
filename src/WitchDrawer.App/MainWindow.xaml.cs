@@ -1,13 +1,10 @@
 using System.Diagnostics;
-using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Interop;
 using System.Windows.Media;
 using WitchDrawer.App.Infrastructure;
 using WitchDrawer.App.ViewModels;
-using WitchDrawer.App.Views;
 using WitchDrawer.Core.Logging;
 using WitchDrawer.Native.HotKeys;
 
@@ -17,18 +14,10 @@ public partial class MainWindow : Window
 {
     private const string InternalDrawerItemDragFormat = "WitchDrawer.DesktopBoxItem";
     private const string BoxListDragFormat = "WitchDrawer.BoxListOrder";
-    private const int WmHotKey = 0x0312;
-    private const int QuickPanelHotKeyId = 0x5744;
-
-    private readonly QuickPanelWindow _quickPanel;
     private readonly IAppLogger _logger;
-    private readonly QuickPanelHotKeySettingsStore _hotKeySettings;
-    private QuickPanelHotKey _quickPanelHotKey;
-    private NativeHotKey? _hotKey;
-    private bool _isHotKeyRegistered;
+    private readonly QuickPanelHotKeyService _hotKeyService;
     private bool _isCapturingHotKey;
     private bool _isApplyingHotKey;
-    private HwndSource? _source;
     private Point? _boxDragStart;
     private BoxViewModel? _boxDragSource;
     private ListBoxItem? _boxDropTarget;
@@ -44,18 +33,14 @@ public partial class MainWindow : Window
 
     internal MainWindow(
         MainViewModel viewModel,
-        QuickPanelWindow quickPanel,
         IAppLogger logger,
-        QuickPanelHotKeySettingsStore hotKeySettings,
-        QuickPanelHotKey quickPanelHotKey)
+        QuickPanelHotKeyService hotKeyService)
     {
         DataContext = viewModel;
-        _quickPanel = quickPanel;
         _logger = logger;
-        _hotKeySettings = hotKeySettings;
-        _quickPanelHotKey = quickPanelHotKey;
+        _hotKeyService = hotKeyService;
         InitializeComponent();
-        UpdateHotKeyUi("点击按钮可修改");
+        UpdateHotKeyUi(_hotKeyService.RegistrationStatusText);
         Loaded += OnLoaded;
         DpiChanged += OnDpiChanged;
         AppThemeManager.ThemeChanged += OnThemeChanged;
@@ -65,6 +50,7 @@ public partial class MainWindow : Window
 
     public void MinimizeToTray()
     {
+        IconLoadBehavior.ReleaseIconsForRealizedItems(MainItemsList);
         Hide();
         WindowHidden?.Invoke(this, EventArgs.Empty);
     }
@@ -72,6 +58,7 @@ public partial class MainWindow : Window
     public void RestoreFromTray()
     {
         Show();
+        _ = Dispatcher.BeginInvoke(() => IconLoadBehavior.RequestIconsForRealizedItems(MainItemsList));
         WindowState = WindowState.Normal;
         Activate();
         Topmost = true;
@@ -99,35 +86,11 @@ public partial class MainWindow : Window
 
     public MainViewModel ViewModel => (MainViewModel)DataContext;
 
-    protected override void OnSourceInitialized(EventArgs e)
-    {
-        base.OnSourceInitialized(e);
-
-        try
-        {
-            var handle = new WindowInteropHelper(this).Handle;
-            _source = HwndSource.FromHwnd(handle);
-            _source?.AddHook(WndProc);
-
-            _hotKey = new NativeHotKey(handle, QuickPanelHotKeyId);
-            RegisterInitialHotKey();
-        }
-        catch (Exception exception)
-        {
-            _logger.Error(exception, "Failed to register quick panel hotkey.");
-            _isHotKeyRegistered = false;
-            UpdateHotKeyUi(GetHotKeyErrorText(exception));
-        }
-    }
-
     protected override void OnClosed(EventArgs e)
     {
         Loaded -= OnLoaded;
         DpiChanged -= OnDpiChanged;
         AppThemeManager.ThemeChanged -= OnThemeChanged;
-        _source?.RemoveHook(WndProc);
-        _hotKey?.Dispose();
-        _quickPanel.ForceClose();
         WindowClosing?.Invoke(this, EventArgs.Empty);
         base.OnClosed(e);
     }
@@ -152,27 +115,6 @@ public partial class MainWindow : Window
     private void OnThemeChanged(object? sender, AppTheme theme)
     {
         AppThemeManager.ApplyToWindow(this);
-    }
-
-    private void RegisterInitialHotKey()
-    {
-        if (_hotKey is null)
-        {
-            return;
-        }
-
-        try
-        {
-            _hotKey.Register(_quickPanelHotKey.RegistrationModifiers, _quickPanelHotKey.VirtualKey);
-            _isHotKeyRegistered = true;
-            UpdateHotKeyUi("已启用，点击按钮可修改");
-        }
-        catch (Exception exception)
-        {
-            _isHotKeyRegistered = false;
-            _logger.Error(exception, "Failed to register configured quick panel hotkey.");
-            UpdateHotKeyUi(GetHotKeyErrorText(exception));
-        }
     }
 
     private void OnQuickPanelHotKeyButtonClick(object sender, RoutedEventArgs e)
@@ -249,72 +191,8 @@ public partial class MainWindow : Window
 
     private async Task ApplyQuickPanelHotKeyAsync(QuickPanelHotKey candidate)
     {
-        if (_hotKey is null)
-        {
-            UpdateHotKeyUi("快捷键组件尚未初始化");
-            return;
-        }
-
-        if (candidate == _quickPanelHotKey && _isHotKeyRegistered)
-        {
-            UpdateHotKeyUi("快捷键未更改");
-            return;
-        }
-
-        var previous = _quickPanelHotKey;
-        var previousWasRegistered = _isHotKeyRegistered;
-        try
-        {
-            _hotKey.Register(candidate.RegistrationModifiers, candidate.VirtualKey);
-            _isHotKeyRegistered = true;
-        }
-        catch (Exception exception)
-        {
-            _logger.Error(exception, "Failed to register the requested quick panel hotkey.");
-            RestorePreviousHotKey(previous, previousWasRegistered);
-            UpdateHotKeyUi(GetHotKeyErrorText(exception));
-            return;
-        }
-
-        try
-        {
-            await _hotKeySettings.SaveAsync(candidate);
-            _quickPanelHotKey = candidate;
-            UpdateHotKeyUi("已保存并立即生效");
-        }
-        catch (Exception exception)
-        {
-            _logger.Error(exception, "Failed to save quick panel hotkey.");
-            RestorePreviousHotKey(previous, previousWasRegistered);
-            UpdateHotKeyUi("保存失败，已恢复原快捷键");
-        }
-    }
-
-    private void RestorePreviousHotKey(QuickPanelHotKey previous, bool previousWasRegistered)
-    {
-        if (_hotKey is null)
-        {
-            _isHotKeyRegistered = false;
-            return;
-        }
-
-        if (!previousWasRegistered)
-        {
-            _hotKey.Unregister();
-            _isHotKeyRegistered = false;
-            return;
-        }
-
-        try
-        {
-            _hotKey.Register(previous.RegistrationModifiers, previous.VirtualKey);
-            _isHotKeyRegistered = true;
-        }
-        catch (Exception restoreException)
-        {
-            _isHotKeyRegistered = false;
-            _logger.Error(restoreException, "Failed to restore previous quick panel hotkey.");
-        }
+        var statusText = await _hotKeyService.ApplyAsync(candidate);
+        UpdateHotKeyUi(statusText);
     }
 
     private void CancelHotKeyCapture(string statusText)
@@ -325,7 +203,7 @@ public partial class MainWindow : Window
 
     private void UpdateHotKeyUi(string statusText)
     {
-        QuickPanelHotKeyButton.Content = _quickPanelHotKey.DisplayText;
+        QuickPanelHotKeyButton.Content = _hotKeyService.CurrentHotKey.DisplayText;
         QuickPanelHotKeyStatusText.Text = statusText;
     }
 
@@ -367,13 +245,6 @@ public partial class MainWindow : Window
             or Key.RWin;
     }
 
-    private static string GetHotKeyErrorText(Exception exception)
-    {
-        return exception is Win32Exception { NativeErrorCode: 1409 }
-            ? "快捷键已被其他程序占用，请换一个组合"
-            : "快捷键注册失败，请换一个组合重试";
-    }
-
     private void OnShellHeaderMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         if (e.ButtonState == MouseButtonState.Pressed)
@@ -390,17 +261,6 @@ public partial class MainWindow : Window
     private void OnCloseClicked(object sender, RoutedEventArgs e)
     {
         Close();
-    }
-
-    private nint WndProc(nint hwnd, int message, nint wParam, nint lParam, ref bool handled)
-    {
-        if (message == WmHotKey && wParam.ToInt32() == QuickPanelHotKeyId)
-        {
-            handled = true;
-            _ = Dispatcher.InvokeAsync(async () => await _quickPanel.ToggleAsync());
-        }
-
-        return nint.Zero;
     }
 
     private void OnPreviewDragOver(object sender, DragEventArgs e)

@@ -8,6 +8,24 @@ namespace WitchDrawer.App.Tests;
 
 public sealed class ShellIconProviderTests
 {
+    [Fact]
+    public void EstimateIconBytes_UsesDecodedPixelBufferSize()
+    {
+        var pixels = new byte[128 * 128 * 4];
+        var source = BitmapSource.Create(
+            128,
+            128,
+            96,
+            96,
+            PixelFormats.Bgra32,
+            null,
+            pixels,
+            128 * 4);
+
+        Assert.Equal(128 * 128 * 4, ShellIconProvider.EstimateIconBytes(source));
+        Assert.Equal(12 * 1024 * 1024, ShellIconProvider.MaxCachedIconBytes);
+    }
+
     [Theory]
     [InlineData(14)]
     [InlineData(25)]

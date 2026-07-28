@@ -16,8 +16,9 @@ public sealed class DrawerItemViewModel : ObservableObject
     private ImageSource? _iconImage;
     private bool _hasIcon;
     private int _isLoadingIcon;
+    private int _isIconRequested;
+    private int _iconRequestVersion;
     private int _requestedIconPixelSize;
-    private int _loadedIconPixelSize;
     private int _gridColumn;
     private int _gridRow;
     private double _gridLeft;
@@ -28,6 +29,8 @@ public sealed class DrawerItemViewModel : ObservableObject
 
     private readonly bool _isPixelated;
     private readonly IAppLogger? _logger;
+    private readonly Func<string, bool, int, Task<ImageSource?>> _iconLoader;
+    private CancellationTokenSource? _iconLoadCts;
 
     public DrawerItemViewModel(
         DrawerItem model,
@@ -35,15 +38,26 @@ public sealed class DrawerItemViewModel : ObservableObject
         bool isPixelated = false,
         int iconPixelSize = 32,
         IAppLogger? logger = null)
+        : this(model, boxName, isPixelated, iconPixelSize, logger, ShellIconProvider.GetIconAsync)
+    {
+    }
+
+    internal DrawerItemViewModel(
+        DrawerItem model,
+        string? boxName,
+        bool isPixelated,
+        int iconPixelSize,
+        IAppLogger? logger,
+        Func<string, bool, int, Task<ImageSource?>> iconLoader)
     {
         Model = model;
         BoxName = boxName ?? string.Empty;
         _isPixelated = isPixelated;
         _logger = logger;
+        _iconLoader = iconLoader;
         _requestedIconPixelSize = NormalizeIconPixelSize(iconPixelSize);
         _gridColumn = Math.Max(0, model.GridColumn ?? 0);
         _gridRow = Math.Max(0, model.GridRow ?? 0);
-        _ = LoadIconAsync();
     }
 
     public DrawerItem Model { get; }
@@ -139,19 +153,37 @@ public sealed class DrawerItemViewModel : ObservableObject
 
     public void ReloadIconIfNeeded()
     {
-        if (!HasIcon)
+        if (Volatile.Read(ref _isIconRequested) == 1 && !HasIcon)
         {
-            _ = LoadIconAsync();
+            QueueIconLoad();
         }
+    }
+
+    public void RequestIcon()
+    {
+        var wasRequested = Interlocked.Exchange(ref _isIconRequested, 1);
+        if (wasRequested == 0)
+        {
+            QueueIconLoad();
+        }
+    }
+
+    public void ReleaseIcon()
+    {
+        Interlocked.Exchange(ref _isIconRequested, 0);
+        Interlocked.Increment(ref _iconRequestVersion);
+        Interlocked.Exchange(ref _iconLoadCts, null)?.Cancel();
+        IconImage = null;
     }
 
     public void RequestIconSize(int iconPixelSize)
     {
         var normalizedSize = NormalizeIconPixelSize(iconPixelSize);
         var previousSize = Interlocked.Exchange(ref _requestedIconPixelSize, normalizedSize);
-        if (previousSize != normalizedSize || !HasIcon)
+        if (Volatile.Read(ref _isIconRequested) == 1
+            && (previousSize != normalizedSize || !HasIcon))
         {
-            _ = LoadIconAsync();
+            QueueIconLoad();
         }
     }
 
@@ -175,17 +207,29 @@ public sealed class DrawerItemViewModel : ObservableObject
         GridTop = GridRow * layoutSettings.ItemSlotHeight + _tempOffsetY;
     }
 
+    private void QueueIconLoad()
+    {
+        Interlocked.Increment(ref _iconRequestVersion);
+        Interlocked.Exchange(ref _iconLoadCts, null)?.Cancel();
+        _ = LoadIconAsync();
+    }
+
     private async Task LoadIconAsync()
     {
-        if (Interlocked.Exchange(ref _isLoadingIcon, 1) == 1)
+        if (Volatile.Read(ref _isIconRequested) == 0
+            || Interlocked.Exchange(ref _isLoadingIcon, 1) == 1)
         {
             return;
         }
 
+        var requestVersion = Volatile.Read(ref _iconRequestVersion);
+        using var loadCts = new CancellationTokenSource();
+        Interlocked.Exchange(ref _iconLoadCts, loadCts)?.Cancel();
+        var cancellationToken = loadCts.Token;
         var path = PathLabel;
         if (string.IsNullOrWhiteSpace(path))
         {
-            Volatile.Write(ref _loadedIconPixelSize, Volatile.Read(ref _requestedIconPixelSize));
+            Interlocked.CompareExchange(ref _iconLoadCts, null, loadCts);
             Interlocked.Exchange(ref _isLoadingIcon, 0);
             return;
         }
@@ -193,40 +237,37 @@ public sealed class DrawerItemViewModel : ObservableObject
         var attemptedSize = Volatile.Read(ref _requestedIconPixelSize);
         try
         {
-            while (true)
+            var (icon, terminalException) = await LoadIconWithRetriesAsync(
+                path,
+                Model.ItemKind == ItemKind.Directory,
+                attemptedSize,
+                requestVersion,
+                cancellationToken).ConfigureAwait(false);
+
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!IsCurrentIconRequest(requestVersion))
             {
-                var requestedSize = Volatile.Read(ref _requestedIconPixelSize);
-                attemptedSize = requestedSize;
-                var (icon, terminalException) = await LoadIconWithRetriesAsync(
-                    path,
-                    Model.ItemKind == ItemKind.Directory,
-                    requestedSize).ConfigureAwait(false);
-
-                if (requestedSize != Volatile.Read(ref _requestedIconPixelSize))
-                {
-                    continue;
-                }
-
-                await SetIconOnUiThreadAsync(icon);
-                Volatile.Write(ref _loadedIconPixelSize, requestedSize);
-
-                if (terminalException is not null)
-                {
-                    _logger?.Error(
-                        terminalException,
-                        $"Failed to load icon for drawer item {Id:D} at {requestedSize}px.");
-                }
-
                 return;
             }
+
+            await SetIconOnUiThreadAsync(icon, requestVersion, cancellationToken);
+            if (terminalException is not null)
+            {
+                _logger?.Error(
+                    terminalException,
+                    $"Failed to load icon for drawer item {Id:D} at {attemptedSize}px.");
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
         }
         catch (Exception exception)
         {
-            if (attemptedSize == Volatile.Read(ref _requestedIconPixelSize))
+            if (IsCurrentIconRequest(requestVersion))
             {
                 try
                 {
-                    await SetIconOnUiThreadAsync(null);
+                    await SetIconOnUiThreadAsync(null, requestVersion, CancellationToken.None);
                 }
                 catch
                 {
@@ -234,15 +275,16 @@ public sealed class DrawerItemViewModel : ObservableObject
                 }
             }
 
-            Volatile.Write(ref _loadedIconPixelSize, attemptedSize);
             _logger?.Error(
                 exception,
                 $"Unexpected icon loading failure for drawer item {Id:D} at {attemptedSize}px.");
         }
         finally
         {
+            Interlocked.CompareExchange(ref _iconLoadCts, null, loadCts);
             Interlocked.Exchange(ref _isLoadingIcon, 0);
-            if (Volatile.Read(ref _requestedIconPixelSize) != Volatile.Read(ref _loadedIconPixelSize))
+            if (Volatile.Read(ref _isIconRequested) == 1
+                && requestVersion != Volatile.Read(ref _iconRequestVersion))
             {
                 _ = LoadIconAsync();
             }
@@ -252,16 +294,19 @@ public sealed class DrawerItemViewModel : ObservableObject
     private async Task<(ImageSource? Icon, Exception? TerminalException)> LoadIconWithRetriesAsync(
         string path,
         bool isDirectory,
-        int requestedSize)
+        int requestedSize,
+        int requestVersion,
+        CancellationToken cancellationToken)
     {
         Exception? terminalException = null;
 
         for (var attempt = 1; attempt <= MaxIconLoadAttempts; attempt++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             try
             {
-                var icon = await ShellIconProvider
-                    .GetIconAsync(path, isDirectory, requestedSize)
+                var icon = await _iconLoader(path, isDirectory, requestedSize)
+                    .WaitAsync(cancellationToken)
                     .ConfigureAwait(false);
                 terminalException = null;
 
@@ -279,27 +324,45 @@ public sealed class DrawerItemViewModel : ObservableObject
                 }
             }
 
-            if (requestedSize != Volatile.Read(ref _requestedIconPixelSize))
+            if (!IsCurrentIconRequest(requestVersion))
             {
                 break;
             }
 
-            await Task.Delay(150 * attempt).ConfigureAwait(false);
+            await Task.Delay(150 * attempt, cancellationToken).ConfigureAwait(false);
         }
 
         return (null, terminalException);
     }
 
-    private async Task SetIconOnUiThreadAsync(ImageSource? icon)
+    private async Task SetIconOnUiThreadAsync(
+        ImageSource? icon,
+        int requestVersion,
+        CancellationToken cancellationToken)
     {
         var application = Application.Current;
         if (application is null || application.Dispatcher.CheckAccess())
         {
-            IconImage = icon;
+            if (!cancellationToken.IsCancellationRequested && IsCurrentIconRequest(requestVersion))
+            {
+                IconImage = icon;
+            }
             return;
         }
 
-        await application.Dispatcher.InvokeAsync(() => IconImage = icon);
+        await application.Dispatcher.InvokeAsync(() =>
+        {
+            if (!cancellationToken.IsCancellationRequested && IsCurrentIconRequest(requestVersion))
+            {
+                IconImage = icon;
+            }
+        });
+    }
+
+    private bool IsCurrentIconRequest(int requestVersion)
+    {
+        return Volatile.Read(ref _isIconRequested) == 1
+            && requestVersion == Volatile.Read(ref _iconRequestVersion);
     }
 
     private static int NormalizeIconPixelSize(int iconPixelSize)

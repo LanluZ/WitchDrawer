@@ -16,7 +16,10 @@ public sealed class QuickPanelViewModel : ObservableObject
     private readonly IDrawerService _drawerService;
     private readonly IFileLauncher _launcher;
     private readonly IAppLogger _logger;
+    private readonly SemaphoreSlim _loadGate = new(1, 1);
     private List<DrawerItemViewModel> _allItems = [];
+    private int _dataVersion;
+    private int _loadedVersion = -1;
     private string _searchText = string.Empty;
     private double _iconDpiScaleX = 1;
     private double _iconDpiScaleY = 1;
@@ -65,13 +68,20 @@ public sealed class QuickPanelViewModel : ObservableObject
 
     public async Task LoadAsync()
     {
+        await _loadGate.WaitAsync();
         try
         {
+            var dataVersion = Volatile.Read(ref _dataVersion);
+            if (dataVersion == Volatile.Read(ref _loadedVersion))
+            {
+                return;
+            }
+
             var boxes = await _drawerService.GetBoxesAsync();
             var boxesById = boxes.ToDictionary(box => box.Id);
             var items = await _drawerService.GetAllItemsAsync();
 
-            _allItems = items
+            var loadedItems = items
                 .Select(item =>
                 {
                     boxesById.TryGetValue(item.BoxId, out var box);
@@ -85,12 +95,32 @@ public sealed class QuickPanelViewModel : ObservableObject
                 })
                 .ToList();
 
+            ReleaseIcons();
+            _allItems = loadedItems;
             ApplyFilter();
+            Volatile.Write(ref _loadedVersion, dataVersion);
         }
         catch (Exception exception)
         {
             _logger.Error(exception, "Failed to load quick panel.");
             StatusText = exception.Message;
+        }
+        finally
+        {
+            _loadGate.Release();
+        }
+    }
+
+    public void Invalidate()
+    {
+        Interlocked.Increment(ref _dataVersion);
+    }
+
+    public void ReleaseIcons()
+    {
+        foreach (var item in _allItems)
+        {
+            item.ReleaseIcon();
         }
     }
 
