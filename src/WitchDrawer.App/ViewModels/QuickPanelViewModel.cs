@@ -13,7 +13,7 @@ public sealed class QuickPanelViewModel : ObservableObject
 {
     private const double ItemIconSizeDip = 30;
 
-    private readonly DrawerService _drawerService;
+    private readonly IDrawerService _drawerService;
     private readonly IFileLauncher _launcher;
     private readonly IAppLogger _logger;
     private List<DrawerItemViewModel> _allItems = [];
@@ -22,7 +22,7 @@ public sealed class QuickPanelViewModel : ObservableObject
     private double _iconDpiScaleY = 1;
     private string _statusText = "快速面板";
 
-    public QuickPanelViewModel(DrawerService drawerService, IFileLauncher launcher, IAppLogger logger)
+    public QuickPanelViewModel(IDrawerService drawerService, IFileLauncher launcher, IAppLogger logger)
     {
         _drawerService = drawerService;
         _launcher = launcher;

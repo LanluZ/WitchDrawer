@@ -1,9 +1,8 @@
 using System.IO;
 using WitchDrawer.App.Infrastructure;
 using WitchDrawer.Core;
-using WitchDrawer.Core.Services;
-using WitchDrawer.Core.Storage;
 using WitchDrawer.Native.HotKeys;
+using WitchDrawer.Core.Services;
 
 namespace WitchDrawer.App.Tests;
 
@@ -46,8 +45,7 @@ public sealed class QuickPanelHotKeyTests
         try
         {
             var paths = new AppPaths(root);
-            var repository = new DrawerRepository(paths.DatabasePath);
-            var drawerService = new DrawerService(paths, repository);
+            using var drawerService = new RustDrawerService(paths.RootDirectory);
             await drawerService.InitializeAsync();
             var store = new QuickPanelHotKeySettingsStore(drawerService);
             var configured = new QuickPanelHotKey(
@@ -76,8 +74,7 @@ public sealed class QuickPanelHotKeyTests
         try
         {
             var paths = new AppPaths(root);
-            var repository = new DrawerRepository(paths.DatabasePath);
-            var drawerService = new DrawerService(paths, repository);
+            using var drawerService = new RustDrawerService(paths.RootDirectory);
             var store = new QuickPanelHotKeySettingsStore(drawerService);
 
             var hotKey = await global::WitchDrawer.App.App.InitializeDataAndLoadQuickPanelHotKeyAsync(

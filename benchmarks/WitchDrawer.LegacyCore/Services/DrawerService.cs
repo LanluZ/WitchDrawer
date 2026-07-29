@@ -4,7 +4,7 @@ using WitchDrawer.Core.Storage;
 
 namespace WitchDrawer.Core.Services;
 
-public sealed class DrawerService
+public sealed class DrawerService : IDrawerService
 {
     private readonly AppPaths _paths;
     private readonly DrawerRepository _repository;

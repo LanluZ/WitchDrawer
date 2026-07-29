@@ -6,10 +6,11 @@ using System.Text;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using WitchDrawer.Core.Logging;
+using WitchDrawer.Core.Abstractions;
 
 namespace WitchDrawer.Core.Services;
 
-public sealed class UpdateService
+public sealed class UpdateService : IUpdateService
 {
     private const string GitHubOwner = "witchscottishfoldcat";
     private const string GitHubRepo = "WitchDrawer";

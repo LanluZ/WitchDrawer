@@ -4,15 +4,25 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <PlatformTarget>x64</PlatformTarget>
+    <RustManifestPath>$(MSBuildThisFileDirectory)..\..\rust\witchdrawer-core\Cargo.toml</RustManifestPath>
+    <RustDllPath>$(MSBuildThisFileDirectory)..\..\rust\witchdrawer-core\target\release\witchdrawer_core.dll</RustDllPath>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.8" />
-    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.12" />
+    <Content Include="$(RustDllPath)"
+             Link="witchdrawer_core.dll"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
-  <ItemGroup>
-    <InternalsVisibleTo Include="WitchDrawer.Core.Tests" />
-  </ItemGroup>
+  <Target Name="BuildRustCore" BeforeTargets="PrepareForBuild" Condition="'$(SkipRustBuild)' != 'true'">
+    <Exec Command="cargo build --release --manifest-path=&quot;$(RustManifestPath)&quot;" />
+  </Target>
+
+  <Target Name="ValidateRustCore" BeforeTargets="CopyFilesToOutputDirectory">
+    <Error Condition="!Exists('$(RustDllPath)')"
+           Text="Rust core DLL was not found. Build it with cargo or omit SkipRustBuild." />
+  </Target>
 
 </Project>

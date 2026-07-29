@@ -7,9 +7,9 @@ using WitchDrawer.App.Infrastructure;
 using WitchDrawer.App.ViewModels;
 using WitchDrawer.App.Views;
 using WitchDrawer.Core;
+using WitchDrawer.Core.Abstractions;
 using WitchDrawer.Core.Logging;
 using WitchDrawer.Core.Services;
-using WitchDrawer.Core.Storage;
 using WitchDrawer.Native.Files;
 using WitchDrawer.Native.Shell;
 
@@ -27,6 +27,7 @@ public partial class App : Application
     private TaskbarIcon? _taskbarIcon;
     private MainWindow? _mainWindow;
     private DesktopBoxManager? _desktopBoxManager;
+    private RustDrawerService? _rustDrawerService;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -48,11 +49,11 @@ public partial class App : Application
             var paths = AppPaths.ForCurrentUser();
 
             var logger = new FileAppLogger(paths.LogsDirectory);
-            var repository = new DrawerRepository(paths.DatabasePath);
-            var drawerService = new DrawerService(paths, repository);
+            var drawerService = new RustDrawerService(paths.RootDirectory);
+            _rustDrawerService = drawerService;
             var launcher = new ShellFileLauncher();
-            var todoService = new TodoService(repository);
-            var updateService = new UpdateService(logger);
+            var todoService = new RustTodoService(drawerService);
+            var updateService = new RustUpdateService(drawerService, logger);
             var quickPanelHotKeySettings = new QuickPanelHotKeySettingsStore(drawerService);
 
             logger.Info("Data directory: " + paths.RootDirectory);
@@ -136,6 +137,7 @@ public partial class App : Application
             await mainViewModel.LoadAsync();
             await quickPanelViewModel.LoadAsync();
             await _desktopBoxManager.RefreshAsync();
+            logger.Info("Application startup complete.");
         }
         catch (Exception exception)
         {
@@ -158,7 +160,7 @@ public partial class App : Application
     }
 
     internal static async Task<QuickPanelHotKey> InitializeDataAndLoadQuickPanelHotKeyAsync(
-        DrawerService drawerService,
+        IDrawerService drawerService,
         QuickPanelHotKeySettingsStore quickPanelHotKeySettings,
         CancellationToken cancellationToken = default)
     {
@@ -166,7 +168,7 @@ public partial class App : Application
         return await quickPanelHotKeySettings.LoadAsync(cancellationToken);
     }
 
-    private static async Task<AppTheme> LoadSavedThemeAsync(DrawerService drawerService)
+    private static async Task<AppTheme> LoadSavedThemeAsync(IDrawerService drawerService)
     {
         var savedTheme = await drawerService.GetSettingAsync(ThemeSettingKey);
         return Enum.TryParse<AppTheme>(savedTheme, ignoreCase: true, out var theme)
@@ -340,6 +342,7 @@ public partial class App : Application
         _singleInstancePipeCts?.Cancel();
         _singleInstancePipeCts?.Dispose();
         _taskbarIcon?.Dispose();
+        _rustDrawerService?.Dispose();
         _singleInstanceMutex?.Dispose();
         base.OnExit(e);
     }

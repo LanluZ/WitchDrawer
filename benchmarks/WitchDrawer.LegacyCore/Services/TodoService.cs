@@ -1,9 +1,10 @@
 using WitchDrawer.Core.Models;
 using WitchDrawer.Core.Storage;
+using WitchDrawer.Core.Abstractions;
 
 namespace WitchDrawer.Core.Services;
 
-public sealed class TodoService
+public sealed class TodoService : ITodoService
 {
     public const int MaximumTitleLength = 200;
 

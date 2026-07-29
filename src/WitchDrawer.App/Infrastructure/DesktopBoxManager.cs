@@ -16,8 +16,8 @@ public sealed class DesktopBoxManager
     private const string BoxPositionSettingPrefix = "BoxPosition:";
     private const char PositionSeparator = ',';
 
-    private readonly DrawerService _drawerService;
-    private readonly TodoService _todoService;
+    private readonly IDrawerService _drawerService;
+    private readonly ITodoService _todoService;
     private readonly IFileLauncher _launcher;
     private readonly IAppLogger _logger;
     private readonly Dictionary<Guid, DesktopBoxWindow> _windows = [];
@@ -30,8 +30,8 @@ public sealed class DesktopBoxManager
     private bool _isAdjustingPosition;
 
     public DesktopBoxManager(
-        DrawerService drawerService,
-        TodoService todoService,
+        IDrawerService drawerService,
+        ITodoService todoService,
         IFileLauncher launcher,
         IAppLogger logger)
     {

@@ -1,15 +1,15 @@
 using CommunityToolkit.Mvvm.Messaging;
 using WitchDrawer.App.Messages;
+using WitchDrawer.Core.Abstractions;
 using WitchDrawer.Core.Models;
-using WitchDrawer.Core.Services;
 
 namespace WitchDrawer.App.ViewModels;
 
 public sealed class BoxViewModel
 {
-    private readonly DrawerService _drawerService;
+    private readonly IDrawerService _drawerService;
 
-    public BoxViewModel(Box model, DrawerService drawerService)
+    public BoxViewModel(Box model, IDrawerService drawerService)
     {
         Model = model;
         _drawerService = drawerService;
