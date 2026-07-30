@@ -3,7 +3,7 @@
 ; Produces a Windows installer (-Setup.exe) alongside the portable zip.
 ;
 ; Preprocessor vars:
-;   MyAppVersion   — passed via /DMyAppVersion=1.1.6 (matches Directory.Build.props)
+;   MyAppVersion   — passed via /DMyAppVersion=1.1.7 (matches Directory.Build.props)
 ;   PublishDir     — the dotnet publish output folder containing WitchDrawer.App.exe
 ;
 ; NOTE: Only the main exe + pdbs ship in the installer; the app is a
@@ -16,11 +16,11 @@
 ; updater.bat handles it via xcopy with /y).
 
 #ifndef MyAppVersion
-  #define MyAppVersion "1.1.6"
+  #define MyAppVersion "1.1.7"
 #endif
 
 #ifndef PublishDir
-  #define PublishDir "..\publish\v1.1.6"
+  #define PublishDir "..\publish\v1.1.7"
 #endif
 
 #define MyAppName "WitchDrawer"
@@ -69,7 +69,7 @@ Source: "{#PublishDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 Name: "{group}\卸载 {#MyAppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
-Name: "{autostartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: startup
+Name: "{autostartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Parameters: "--silent"; Tasks: startup
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#MyAppName}}"; Flags: nowait postinstall skipifsilent

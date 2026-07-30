@@ -12,6 +12,7 @@ using WitchDrawer.Core.Logging;
 using WitchDrawer.Core.Services;
 using WitchDrawer.Native.Files;
 using WitchDrawer.Native.Shell;
+using WitchDrawer.Native.Windows;
 
 namespace WitchDrawer.App;
 
@@ -34,11 +35,16 @@ public partial class App : Application
         base.OnStartup(e);
 
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        var silentStart = StartupLaunchPolicy.IsSilent(e.Args);
 
         _singleInstanceMutex = new Mutex(true, SingleInstanceMutexName, out var isFirstInstance);
         if (!isFirstInstance)
         {
-            await SignalExistingInstanceAsync();
+            if (StartupLaunchPolicy.ShouldActivateExistingInstance(e.Args))
+            {
+                await SignalExistingInstanceAsync();
+            }
+
             Shutdown(0);
             return;
         }
@@ -49,6 +55,21 @@ public partial class App : Application
             var paths = AppPaths.ForCurrentUser();
 
             var logger = new FileAppLogger(paths.LogsDirectory);
+            var shortcutMigration = await Task.Run(() =>
+                StartupShortcutMigration.EnsureSilentArguments(
+                    Environment.ProcessPath,
+                    StartupLaunchPolicy.SilentArgument));
+            if (shortcutMigration.UpdatedCount > 0)
+            {
+                logger.Info(
+                    $"Added silent startup arguments to {shortcutMigration.UpdatedCount} legacy shortcut(s).");
+            }
+
+            foreach (var exception in shortcutMigration.Errors)
+            {
+                logger.Error(exception, "Failed to update a legacy startup shortcut.");
+            }
+
             var drawerService = new RustDrawerService(paths.RootDirectory);
             _rustDrawerService = drawerService;
             var launcher = new ShellFileLauncher();
@@ -125,7 +146,6 @@ public partial class App : Application
             InitializeTaskbarIcon(paths, logger);
 
             MainWindow = _mainWindow;
-            var silentStart = Array.IndexOf(Environment.GetCommandLineArgs(), "--silent") >= 0;
             if (silentStart)
             {
                 _mainWindow.MinimizeToTray();
