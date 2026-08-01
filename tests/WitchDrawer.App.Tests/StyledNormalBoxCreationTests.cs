@@ -6,7 +6,6 @@ using WitchDrawer.Core.Abstractions;
 using WitchDrawer.Core.Logging;
 using WitchDrawer.Core.Models;
 using WitchDrawer.Core.Services;
-using WitchDrawer.Core.Storage;
 
 namespace WitchDrawer.App.Tests;
 
@@ -22,8 +21,7 @@ public sealed class StyledNormalBoxCreationTests
         try
         {
             var paths = new AppPaths(root);
-            var repository = new DrawerRepository(paths.DatabasePath);
-            var drawerService = new DrawerService(paths, repository);
+            using var drawerService = new RustDrawerService(paths.RootDirectory);
             await drawerService.InitializeAsync();
             var logger = new RecordingLogger();
             var launcher = new NoOpFileLauncher();
@@ -35,11 +33,11 @@ public sealed class StyledNormalBoxCreationTests
                 visualStyleStore);
             var viewModel = new MainViewModel(
                 drawerService,
-                new TodoService(repository),
+                new RustTodoService(drawerService),
                 launcher,
                 logger,
                 quickPanel,
-                new UpdateService(logger),
+                new RustUpdateService(drawerService, logger),
                 visualStyleStore,
                 new BoxPositionLockStateStore(drawerService, logger));
             var existingIds = (await drawerService.GetBoxesAsync())

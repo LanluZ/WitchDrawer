@@ -1,13 +1,13 @@
 using System.Collections.Concurrent;
 using WitchDrawer.App.ViewModels;
+using WitchDrawer.Core.Abstractions;
 using WitchDrawer.Core.Logging;
 using WitchDrawer.Core.Models;
-using WitchDrawer.Core.Services;
 
 namespace WitchDrawer.App.Infrastructure;
 
 public sealed class BoxVisualStyleStore(
-    DrawerService drawerService,
+    IDrawerService drawerService,
     IAppLogger logger)
 {
     private const string SettingKeyPrefix = "BoxVisualStyle:";

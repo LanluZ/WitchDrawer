@@ -2,14 +2,14 @@ using System.Collections.ObjectModel;
 using System.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using WitchDrawer.Core.Abstractions;
 using WitchDrawer.Core.Logging;
-using WitchDrawer.Core.Services;
 
 namespace WitchDrawer.App.ViewModels;
 
 public sealed class TodoBoxDetailViewModel : ObservableObject
 {
-    private readonly TodoService _todoService;
+    private readonly ITodoService _todoService;
     private readonly IAppLogger _logger;
     private CancellationTokenSource? _loadCts;
     private int _loadVersion;
@@ -19,7 +19,7 @@ public sealed class TodoBoxDetailViewModel : ObservableObject
     private bool _isBusy;
 
     public TodoBoxDetailViewModel(
-        TodoService todoService,
+        ITodoService todoService,
         IAppLogger logger)
     {
         _todoService = todoService;
@@ -176,7 +176,7 @@ public sealed class TodoBoxDetailViewModel : ObservableObject
         var normalizedTitle = NewTodoTitle.Trim();
         return BoxId is not null
             && !IsBusy
-            && normalizedTitle.Length is > 0 and <= TodoService.MaximumTitleLength;
+            && normalizedTitle.Length is > 0 and <= 200;
     }
 
     private async Task AddTodoAsync()

@@ -6,7 +6,6 @@ using WitchDrawer.Core.Abstractions;
 using WitchDrawer.Core.Logging;
 using WitchDrawer.Core.Models;
 using WitchDrawer.Core.Services;
-using WitchDrawer.Core.Storage;
 
 namespace WitchDrawer.App.Tests;
 
@@ -119,7 +118,7 @@ public sealed class TodoBoxDetailViewModelTests
             launcher,
             logger,
             quickPanel,
-            new UpdateService(logger),
+            new RustUpdateService(workspace.DrawerService, logger),
             visualStyleStore,
             new BoxPositionLockStateStore(workspace.DrawerService, logger));
         await viewModel.LoadAsync();
@@ -150,8 +149,8 @@ public sealed class TodoBoxDetailViewModelTests
     {
         private TodoWorkspace(
             string root,
-            DrawerService drawerService,
-            TodoService todoService,
+            RustDrawerService drawerService,
+            ITodoService todoService,
             Box todoBox)
         {
             Root = root;
@@ -162,9 +161,9 @@ public sealed class TodoBoxDetailViewModelTests
 
         public string Root { get; }
 
-        public DrawerService DrawerService { get; }
+        public RustDrawerService DrawerService { get; }
 
-        public TodoService TodoService { get; }
+        public ITodoService TodoService { get; }
 
         public Box TodoBox { get; }
 
@@ -175,8 +174,7 @@ public sealed class TodoBoxDetailViewModelTests
                 "WitchDrawer.TodoDetailTests",
                 Guid.NewGuid().ToString("N"));
             var paths = new AppPaths(root);
-            var repository = new DrawerRepository(paths.DatabasePath);
-            var drawerService = new DrawerService(paths, repository);
+            var drawerService = new RustDrawerService(paths.RootDirectory);
             await drawerService.InitializeAsync();
             var todoBox = await drawerService.CreateBoxAsync(
                 "待办收纳盒",
@@ -185,12 +183,17 @@ public sealed class TodoBoxDetailViewModelTests
             return new TodoWorkspace(
                 root,
                 drawerService,
-                new TodoService(repository),
+                new RustTodoService(drawerService),
                 todoBox);
         }
 
         public void Dispose()
         {
+            if (DrawerService is IDisposable disposable)
+            {
+                disposable.Dispose();
+            }
+
             try
             {
                 if (Directory.Exists(Root))

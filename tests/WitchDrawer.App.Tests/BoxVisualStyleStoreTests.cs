@@ -2,10 +2,10 @@ using System.IO;
 using WitchDrawer.App.Infrastructure;
 using WitchDrawer.App.ViewModels;
 using WitchDrawer.Core;
+using WitchDrawer.Core.Abstractions;
 using WitchDrawer.Core.Logging;
 using WitchDrawer.Core.Models;
 using WitchDrawer.Core.Services;
-using WitchDrawer.Core.Storage;
 
 namespace WitchDrawer.App.Tests;
 
@@ -95,7 +95,7 @@ public sealed class BoxVisualStyleStoreTests
     {
         private TestWorkspace(
             string root,
-            DrawerService drawerService,
+            IDrawerService drawerService,
             RecordingLogger logger,
             BoxVisualStyleStore store)
         {
@@ -107,7 +107,7 @@ public sealed class BoxVisualStyleStoreTests
 
         public string Root { get; }
 
-        public DrawerService DrawerService { get; }
+        public IDrawerService DrawerService { get; }
 
         public RecordingLogger Logger { get; }
 
@@ -120,8 +120,7 @@ public sealed class BoxVisualStyleStoreTests
                 "WitchDrawerTests",
                 Guid.NewGuid().ToString("N"));
             var paths = new AppPaths(root);
-            var repository = new DrawerRepository(paths.DatabasePath);
-            var drawerService = new DrawerService(paths, repository);
+            var drawerService = new RustDrawerService(paths.RootDirectory);
             await drawerService.InitializeAsync();
             var logger = new RecordingLogger();
             return new TestWorkspace(
@@ -133,6 +132,11 @@ public sealed class BoxVisualStyleStoreTests
 
         public ValueTask DisposeAsync()
         {
+            if (DrawerService is IDisposable disposable)
+            {
+                disposable.Dispose();
+            }
+
             if (Directory.Exists(Root))
             {
                 Directory.Delete(Root, recursive: true);

@@ -1,11 +1,11 @@
 using System.Collections.Concurrent;
+using WitchDrawer.Core.Abstractions;
 using WitchDrawer.Core.Logging;
-using WitchDrawer.Core.Services;
 
 namespace WitchDrawer.App.Infrastructure;
 
 public sealed class BoxPositionLockStateStore(
-    DrawerService drawerService,
+    IDrawerService drawerService,
     IAppLogger logger)
 {
     private const string SettingKeyPrefix = "BoxPositionLocked:";
