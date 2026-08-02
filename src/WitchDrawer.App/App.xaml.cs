@@ -76,6 +76,9 @@ public partial class App : Application
             var todoService = new RustTodoService(drawerService);
             var updateService = new RustUpdateService(drawerService, logger);
             var quickPanelHotKeySettings = new QuickPanelHotKeySettingsStore(drawerService);
+            var boxVisualStyleStore = new BoxVisualStyleStore(drawerService, logger);
+            var boxPositionLockStateStore =
+                new BoxPositionLockStateStore(drawerService, logger);
 
             logger.Info("Data directory: " + paths.RootDirectory);
             logger.Info("Database path: " + paths.DatabasePath);
@@ -85,7 +88,11 @@ public partial class App : Application
                 quickPanelHotKeySettings);
             AppThemeManager.Apply(await LoadSavedThemeAsync(drawerService));
 
-            var quickPanelViewModel = new QuickPanelViewModel(drawerService, launcher, logger);
+            var quickPanelViewModel = new QuickPanelViewModel(
+                drawerService,
+                launcher,
+                logger,
+                boxVisualStyleStore);
             var quickPanel = new QuickPanelWindow(quickPanelViewModel);
             var mainViewModel = new MainViewModel(
                 drawerService,
@@ -93,12 +100,16 @@ public partial class App : Application
                 launcher,
                 logger,
                 quickPanelViewModel,
-                updateService);
+                updateService,
+                boxVisualStyleStore,
+                boxPositionLockStateStore);
             _desktopBoxManager = new DesktopBoxManager(
                 drawerService,
                 todoService,
                 launcher,
-                logger);
+                logger,
+                boxVisualStyleStore,
+                boxPositionLockStateStore);
             _mainWindow = new MainWindow(
                 mainViewModel,
                 quickPanel,
