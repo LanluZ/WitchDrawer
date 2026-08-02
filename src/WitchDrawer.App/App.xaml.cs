@@ -75,6 +75,7 @@ public partial class App : Application
             var launcher = new ShellFileLauncher();
             var todoService = new RustTodoService(drawerService);
             var updateService = new RustUpdateService(drawerService, logger);
+            await updateService.CleanupLegacyUpdaterArtifactsAsync();
             var quickPanelHotKeySettings = new QuickPanelHotKeySettingsStore(drawerService);
             var boxVisualStyleStore = new BoxVisualStyleStore(drawerService, logger);
             var boxPositionLockStateStore =

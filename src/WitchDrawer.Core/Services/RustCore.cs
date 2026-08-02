@@ -149,6 +149,10 @@ internal static class RustCore
         IntPtr expectedSha256OrNull);
 
     [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern IntPtr wd_cleanup_legacy_updater_artifacts(
+        RustContextHandle ctx);
+
+    [DllImport(DllName, CallingConvention = CallingConvention.Cdecl)]
     internal static extern void wd_free_string(IntPtr ptr);
 
     // ── Helpers ──────────────────────────────────────────────────────────
@@ -1019,6 +1023,20 @@ public sealed class RustUpdateService : IUpdateService
         {
             _logger?.Error(exception, "Rust core failed to download/apply update.");
             return false;
+        }
+    }
+
+    public Task<int> CleanupLegacyUpdaterArtifactsAsync()
+    {
+        try
+        {
+            return Task.FromResult(RustCore.Call<int>(() =>
+                RustCore.wd_cleanup_legacy_updater_artifacts(_owner.Context)));
+        }
+        catch (Exception exception)
+        {
+            _logger?.Error(exception, "Rust core failed to clean legacy updater artifacts.");
+            return Task.FromResult(0);
         }
     }
 }

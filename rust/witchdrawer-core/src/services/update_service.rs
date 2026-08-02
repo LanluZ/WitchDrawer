@@ -174,6 +174,16 @@ impl UpdateService {
 
     // -- Download & apply ---------------------------------------------------
 
+    /// Download the update package, verify its SHA-256 (when published), and
+    /// hand the payload to a detached updater script.
+    ///
+    /// Mirrors the v1.1.9 C# flow:
+    /// - each update gets its own `%TEMP%\WitchDrawerUpdate\{updateId}` root;
+    /// - the zip is extracted into a `payload` subdirectory;
+    /// - the updater `.bat` lives OUTSIDE the directory it removes, so cmd.exe
+    ///   never loses its own script while cleaning the update payload;
+    /// - all paths are passed to the script through environment variables and
+    ///   progress is recorded in `%LocalAppData%\WitchDrawer\Logs\updater.log`.
     pub async fn download_and_apply_update(
         &self,
         download_url: &str,
@@ -184,15 +194,15 @@ impl UpdateService {
             return Ok(false);
         }
 
-        let temp_dir = std::env::temp_dir().join("WitchDrawerUpdate");
-        if temp_dir.exists() {
-            let _ = fs::remove_dir_all(&temp_dir);
-        }
-        fs::create_dir_all(&temp_dir)?;
+        let update_id = uuid::Uuid::new_v4().simple().to_string();
+        let temp_root = std::env::temp_dir()
+            .join("WitchDrawerUpdate")
+            .join(&update_id);
+        let payload_dir = temp_root.join("payload");
+        fs::create_dir_all(&payload_dir)?;
+        let zip_path = temp_root.join("update.zip");
 
-        let zip_path = temp_dir.join("update.zip");
-
-        // Download the zip.
+        // -- Download -------------------------------------------------------
         let response = self
             .client
             .get(download_url)
@@ -201,20 +211,20 @@ impl UpdateService {
             .map_err(|e| AppError::io_error(format!("Download failed: {}", e)))?;
 
         if !response.status().is_success() {
+            let _ = fs::remove_dir_all(&temp_root);
             return Err(AppError::io_error(format!(
                 "Download returned status {}",
                 response.status()
             )));
         }
 
-        // Read the full response into bytes then write to disk.
         let bytes = response
             .bytes()
             .await
             .map_err(|e| AppError::io_error(format!("Read error: {}", e)))?;
         fs::write(&zip_path, &bytes)?;
 
-        // SHA-256 verification.
+        // -- SHA-256 verification -------------------------------------------
         if let Some(expected) = expected_sha256 {
             let actual = Self::compute_sha256_hex(&zip_path)?;
             if !actual.eq_ignore_ascii_case(expected) {
@@ -223,7 +233,7 @@ impl UpdateService {
                     expected,
                     actual
                 );
-                let _ = fs::remove_dir_all(&temp_dir);
+                let _ = fs::remove_dir_all(&temp_root);
                 return Ok(false);
             }
         } else {
@@ -232,58 +242,140 @@ impl UpdateService {
             );
         }
 
-        // Extract zip.
-        let zip_file = fs::File::open(&zip_path)?;
-        let mut archive = zip::ZipArchive::new(zip_file)
-            .map_err(|e| AppError::io_error(format!("Failed to open zip: {}", e)))?;
-        archive
-            .extract(&temp_dir)
-            .map_err(|e| AppError::io_error(format!("Failed to extract zip: {}", e)))?;
+        // -- Extract payload -------------------------------------------------
+        let zip_file = match fs::File::open(&zip_path) {
+            Ok(f) => f,
+            Err(e) => {
+                let _ = fs::remove_dir_all(&temp_root);
+                return Err(AppError::io_error(format!(
+                    "Failed to open update zip: {}",
+                    e
+                )));
+            }
+        };
+        let mut archive = match zip::ZipArchive::new(zip_file) {
+            Ok(a) => a,
+            Err(e) => {
+                let _ = fs::remove_dir_all(&temp_root);
+                return Err(AppError::io_error(format!("Failed to open zip: {}", e)));
+            }
+        };
+        if let Err(e) = archive.extract(&payload_dir) {
+            let _ = fs::remove_dir_all(&temp_root);
+            return Err(AppError::io_error(format!("Failed to extract zip: {}", e)));
+        }
 
-        // Create updater script.
-        let app_dir = std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-            .unwrap_or_else(|| PathBuf::from("."));
-        let app_dir_s = app_dir.to_string_lossy();
-        let temp_dir_s = temp_dir.to_string_lossy();
+        // -- Validate the running executable is present in the payload -------
+        let app_executable_path = match std::env::current_exe() {
+            Ok(p) => p,
+            Err(_) => {
+                let _ = fs::remove_dir_all(&temp_root);
+                tracing::info!(
+                    "Cannot apply update because the current executable path is unavailable."
+                );
+                return Ok(false);
+            }
+        };
+        let app_executable_path = match std::fs::canonicalize(&app_executable_path) {
+            Ok(p) => p,
+            Err(_) => app_executable_path,
+        };
+        let app_dir = match app_executable_path.parent() {
+            Some(p) => p.to_path_buf(),
+            None => {
+                let _ = fs::remove_dir_all(&temp_root);
+                tracing::info!("Cannot apply update because the application directory is invalid.");
+                return Ok(false);
+            }
+        };
+        let executable_name = match app_executable_path.file_name().and_then(|n| n.to_str()) {
+            Some(n) => n.to_string(),
+            None => {
+                let _ = fs::remove_dir_all(&temp_root);
+                tracing::info!("Cannot apply update because the executable name is unavailable.");
+                return Ok(false);
+            }
+        };
 
-        let bat_content = format!(
-            r#"@echo off
-chcp 65001 >nul
-echo Updating WitchDrawer...
-timeout /t 2 /nobreak >nul
+        if !payload_dir.join(&executable_name).exists() {
+            tracing::info!("Downloaded update does not contain {}.", executable_name);
+            let _ = fs::remove_dir_all(&temp_root);
+            return Ok(false);
+        }
 
-taskkill /im "WitchDrawer.App.exe" /f >nul 2>&1
-timeout /t 1 /nobreak >nul
+        // -- Write the updater script outside the removed directory ----------
+        let updater_path =
+            std::env::temp_dir().join(format!("WitchDrawerUpdater-{}.bat", update_id));
+        let update_log_path = local_app_data_dir()
+            .map(|base| base.join("WitchDrawer").join("Logs").join("updater.log"))
+            .unwrap_or_else(|| std::env::temp_dir().join("WitchDrawer-updater.log"));
+        if let Some(log_dir) = update_log_path.parent() {
+            let _ = fs::create_dir_all(log_dir);
+        }
 
-xcopy "{td}\*" "{ad}" /e /y /i >nul 2>&1
+        let script = build_updater_script();
+        if let Err(e) = fs::write(&updater_path, script) {
+            let _ = fs::remove_dir_all(&temp_root);
+            let _ = fs::remove_file(&updater_path);
+            return Err(AppError::io_error(format!(
+                "Failed to write updater script: {}",
+                e
+            )));
+        }
 
-start "" "{ad}\WitchDrawer.App.exe"
-
-cd /d "%temp%"
-rmdir /s /q "{td}" >nul 2>&1
-del "%~f0" >nul 2>&1
-"#,
-            td = temp_dir_s,
-            ad = app_dir_s,
-        );
-
-        let updater_path = temp_dir.join("updater.bat");
-        fs::write(&updater_path, bat_content)?;
-
-        // Launch the updater script (Windows only).
+        // -- Launch the updater (Windows only) -------------------------------
         #[cfg(target_os = "windows")]
         {
-            use std::os::windows::process::CommandExt;
-            const CREATE_NO_WINDOW: u32 = 0x08000000;
-            std::process::Command::new("cmd")
-                .args(["/C", "start", "", updater_path.to_string_lossy().as_ref()])
-                .creation_flags(CREATE_NO_WINDOW)
-                .spawn()?;
+            let mut start_info = create_updater_start_info(
+                &updater_path,
+                &temp_root,
+                &payload_dir,
+                &app_dir,
+                &app_executable_path,
+                &executable_name,
+                &update_log_path,
+            );
+
+            let spawned = start_info.spawn();
+
+            if let Err(e) = spawned {
+                let _ = fs::remove_dir_all(&temp_root);
+                let _ = fs::remove_file(&updater_path);
+                tracing::info!("Failed to start the update helper process: {}", e);
+                return Ok(false);
+            }
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            // Non-Windows: nothing to launch; keep the computed path used.
+            let _ = update_log_path;
         }
 
         Ok(true)
+    }
+
+    /// Remove legacy `update.zip` / `updater.bat` residue from the application
+    /// directory (older updater versions left these files behind).
+    /// Returns the number of removed artifacts.
+    pub fn cleanup_legacy_updater_artifacts(app_directory: &Path) -> u32 {
+        let mut removed_count = 0;
+        for file_name in ["update.zip", "updater.bat"] {
+            let candidate = app_directory.join(file_name);
+            if candidate.is_file() {
+                match fs::remove_file(&candidate) {
+                    Ok(()) => removed_count += 1,
+                    Err(e) => {
+                        tracing::warn!(
+                            "Failed to remove legacy updater artifact {}: {}",
+                            candidate.display(),
+                            e
+                        );
+                    }
+                }
+            }
+        }
+        removed_count
     }
 
     // =======================================================================
@@ -486,6 +578,85 @@ fn is_valid_sha256_hex(s: &str) -> bool {
     s.len() == 64 && s.chars().all(|c| c.is_ascii_hexdigit())
 }
 
+// ---------------------------------------------------------------------------
+// Updater script & process helpers (module-level, mirror C# internal statics)
+// ---------------------------------------------------------------------------
+
+/// Build the detached updater batch script. All paths are read from
+/// environment variables so the script itself never hard-codes a directory.
+pub(crate) fn build_updater_script() -> String {
+    r#"@echo off
+setlocal
+>>"%WITCHDRAWER_UPDATE_LOG%" echo [%date% %time%] Update started.
+timeout /t 2 /nobreak >nul
+
+taskkill /im "%WITCHDRAWER_EXE_NAME%" /f >nul 2>&1
+timeout /t 1 /nobreak >nul
+
+xcopy "%WITCHDRAWER_PAYLOAD%\*" "%WITCHDRAWER_APP_DIR%" /e /y /i >>"%WITCHDRAWER_UPDATE_LOG%" 2>&1
+if errorlevel 1 goto update_failed
+
+del /q "%WITCHDRAWER_APP_DIR%\update.zip" "%WITCHDRAWER_APP_DIR%\updater.bat" >nul 2>&1
+
+start "" /b /d "%WITCHDRAWER_APP_DIR%" "%WITCHDRAWER_APP_EXE%" >nul 2>&1
+if errorlevel 1 goto update_failed
+
+>>"%WITCHDRAWER_UPDATE_LOG%" echo [%date% %time%] Update completed.
+cd /d "%TEMP%"
+rmdir /s /q "%WITCHDRAWER_UPDATE_ROOT%" >nul 2>&1
+start "" /b "%ComSpec%" /d /c del /q "%~f0" >nul 2>&1 & exit /b 0
+
+:update_failed
+>>"%WITCHDRAWER_UPDATE_LOG%" echo [%date% %time%] Update failed with exit code %errorlevel%.
+exit /b 1
+"#
+    .to_string()
+}
+
+/// Build a `cmd.exe` command that runs the updater script with all paths
+/// passed through environment variables.
+#[cfg(target_os = "windows")]
+pub(crate) fn create_updater_start_info(
+    updater_path: &Path,
+    temp_root: &Path,
+    payload_directory: &Path,
+    app_directory: &Path,
+    app_executable_path: &Path,
+    executable_name: &str,
+    update_log_path: &Path,
+) -> std::process::Command {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+    let mut command = std::process::Command::new("cmd.exe");
+    command
+        .args(["/d", "/s", "/c", &format!("\"{}\"", updater_path.display())])
+        .env("WITCHDRAWER_UPDATE_ROOT", temp_root)
+        .env("WITCHDRAWER_PAYLOAD", payload_directory)
+        .env("WITCHDRAWER_APP_DIR", app_directory)
+        .env("WITCHDRAWER_APP_EXE", app_executable_path)
+        .env("WITCHDRAWER_EXE_NAME", executable_name)
+        .env("WITCHDRAWER_UPDATE_LOG", update_log_path)
+        .creation_flags(CREATE_NO_WINDOW);
+    command
+}
+
+/// Resolve `%LocalAppData%` (Windows) or fall back to `$HOME/.local/share`.
+fn local_app_data_dir() -> Option<PathBuf> {
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(path) = std::env::var_os("LOCALAPPDATA") {
+            return Some(PathBuf::from(path));
+        }
+    }
+
+    if let Some(home) = std::env::var_os("HOME") {
+        return Some(PathBuf::from(home).join(".local").join("share"));
+    }
+
+    None
+}
+
 impl Default for UpdateCheckResult {
     fn default() -> Self {
         Self {
@@ -627,5 +798,68 @@ mod tests {
         let input = "line1\r\nline2\r\nline3";
         let result = UpdateService::truncate_release_notes(input, 500);
         assert_eq!(result, "line1\nline2\nline3");
+    }
+
+    #[test]
+    fn updater_script_copies_payload_and_cleans_legacy_artifacts() {
+        let script = build_updater_script();
+
+        // Copies payload (not the whole update root).
+        assert!(script.contains("xcopy \"%WITCHDRAWER_PAYLOAD%\\*\" \"%WITCHDRAWER_APP_DIR%\""));
+        assert!(!script.contains("xcopy \"%WITCHDRAWER_UPDATE_ROOT%\\*\""));
+
+        // Cleans legacy residue.
+        assert!(script.contains(
+            "del /q \"%WITCHDRAWER_APP_DIR%\\update.zip\" \"%WITCHDRAWER_APP_DIR%\\updater.bat\""
+        ));
+
+        // Restarts the app from its own directory.
+        assert!(
+            script.contains("start \"\" /b /d \"%WITCHDRAWER_APP_DIR%\" \"%WITCHDRAWER_APP_EXE%\"")
+        );
+
+        // Removes the update root and self-deletes.
+        assert!(script.contains("rmdir /s /q \"%WITCHDRAWER_UPDATE_ROOT%\""));
+        assert!(script.contains("del /q \"%~f0\""));
+    }
+
+    #[test]
+    fn cleanup_legacy_updater_artifacts_deletes_only_known_residue() {
+        let test_root = std::env::temp_dir()
+            .join("WitchDrawer Legacy Cleanup Tests")
+            .join(uuid::Uuid::new_v4().simple().to_string());
+        let app_directory = test_root.join("app");
+        fs::create_dir_all(&app_directory).unwrap();
+
+        let zip_path = app_directory.join("update.zip");
+        let updater_path = app_directory.join("updater.bat");
+        let app_path = app_directory.join("WitchDrawer.App.exe");
+        fs::write(&zip_path, "legacy").unwrap();
+        fs::write(&updater_path, "legacy").unwrap();
+        fs::write(&app_path, "keep").unwrap();
+
+        let removed_count = UpdateService::cleanup_legacy_updater_artifacts(&app_directory);
+
+        assert_eq!(removed_count, 2);
+        assert!(!zip_path.exists());
+        assert!(!updater_path.exists());
+        assert!(app_path.exists());
+
+        let _ = fs::remove_dir_all(&test_root);
+    }
+
+    #[test]
+    fn cleanup_legacy_updater_artifacts_ignores_missing_files() {
+        let test_root = std::env::temp_dir()
+            .join("WitchDrawer Legacy Cleanup Tests")
+            .join(uuid::Uuid::new_v4().simple().to_string());
+        let app_directory = test_root.join("app");
+        fs::create_dir_all(&app_directory).unwrap();
+
+        let removed_count = UpdateService::cleanup_legacy_updater_artifacts(&app_directory);
+
+        assert_eq!(removed_count, 0);
+
+        let _ = fs::remove_dir_all(&test_root);
     }
 }
