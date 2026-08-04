@@ -786,6 +786,31 @@ pub unsafe extern "C" fn wd_download_and_apply_update(
     })
 }
 
+/// Remove legacy `update.zip` / `updater.bat` residue from the application
+/// directory. Returns the number of removed artifacts.
+#[no_mangle]
+pub unsafe extern "C" fn wd_cleanup_legacy_updater_artifacts(ctx: *mut Context) -> *mut c_char {
+    ffi_catch(|| {
+        // Validate the context is alive; the cleanup itself is static.
+        let ctx = match unsafe { ctx.as_ref() } {
+            Some(c) => c,
+            None => return ffi_err("null context"),
+        };
+        let _ = ctx;
+
+        let app_directory = match std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+        {
+            Some(dir) => dir,
+            None => return ffi_err("failed to resolve application directory"),
+        };
+
+        let removed_count = UpdateService::cleanup_legacy_updater_artifacts(&app_directory);
+        ffi_ok(removed_count)
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -930,5 +955,32 @@ mod tests {
         let result = unsafe { wd_check_update(std::ptr::null_mut(), version.as_ptr()) };
         let json = unsafe { read_and_free(result) };
         assert!(json.contains("\"ok\":false"));
+    }
+
+    #[test]
+    fn test_cleanup_legacy_updater_artifacts() {
+        let dir = tempfile::tempdir().unwrap();
+        let data_dir = make_cstr(dir.path().to_str().unwrap());
+        let ctx = unsafe { wd_init(data_dir) };
+        assert!(!ctx.is_null());
+
+        let json = unsafe { read_and_free(wd_cleanup_legacy_updater_artifacts(ctx)) };
+        let response: serde_json::Value = serde_json::from_str(&json).unwrap();
+        // No residue in a fresh temp workspace; ok with zero removed.
+        assert_eq!(response["ok"], true);
+        assert!(response["data"].is_number());
+
+        unsafe { wd_dispose(ctx) };
+        unsafe {
+            let _ = CString::from_raw(data_dir as *mut c_char);
+        }
+    }
+
+    #[test]
+    fn test_cleanup_legacy_updater_artifacts_null_context() {
+        let result = unsafe { wd_cleanup_legacy_updater_artifacts(std::ptr::null_mut()) };
+        let json = unsafe { read_and_free(result) };
+        assert!(json.contains("\"ok\":false"));
+        assert!(json.contains("null context"));
     }
 }
