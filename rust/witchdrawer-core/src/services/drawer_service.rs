@@ -94,7 +94,10 @@ impl DrawerService {
         let id = Uuid::new_v4();
         let now = Utc::now();
 
-        let storage_path = if box_type == BoxType::Normal || box_type == BoxType::Pixel {
+        let storage_path = if box_type == BoxType::Normal
+            || box_type == BoxType::Pixel
+            || box_type == BoxType::Drawer
+        {
             let p = self
                 .paths
                 .boxes_directory()
@@ -1019,6 +1022,49 @@ mod tests {
             source_path.canonicalize().unwrap()
         );
         assert_eq!(fs::read_to_string(&source_path).unwrap(), "important");
+    }
+
+    #[test]
+    fn drawer_box_uses_stored_file_safety_and_restores_on_delete() {
+        let temp = TempDir::new().unwrap();
+        let (service, _, _) = create_service(&temp);
+
+        let source_directory = temp.path().join("drawer-source");
+        fs::create_dir_all(&source_directory).unwrap();
+        let source_path = source_directory.join("drawer-item.txt");
+        fs::write(&source_path, "hello").unwrap();
+
+        let drawer_box = service.create_box("抽屉盒 1", BoxType::Drawer).unwrap();
+        let imported = service
+            .import_path(drawer_box.id, source_path.to_str().unwrap(), None, None)
+            .unwrap();
+
+        assert!(drawer_box.storage_path.is_some());
+        assert!(imported.stored_path.is_some());
+        assert!(!source_path.exists());
+        assert!(Path::new(imported.stored_path.as_deref().unwrap()).is_file());
+        let boxes_root = temp
+            .path()
+            .join("app-data")
+            .join("Boxes")
+            .canonicalize()
+            .unwrap_or_else(|_| temp.path().join("app-data").join("Boxes"));
+        let stored = Path::new(imported.stored_path.as_deref().unwrap())
+            .canonicalize()
+            .unwrap();
+        assert!(
+            stored.starts_with(&boxes_root),
+            "stored path {:?} should be under boxes root {:?}",
+            stored,
+            boxes_root
+        );
+
+        let result = service.delete_box(drawer_box.id).unwrap();
+
+        assert!(result.box_removed);
+        assert_eq!(result.restored_count, 1);
+        assert!(source_path.exists());
+        assert!(!Path::new(imported.stored_path.as_deref().unwrap()).exists());
     }
 
     #[test]

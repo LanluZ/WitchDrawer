@@ -631,6 +631,7 @@ pub(crate) fn create_updater_start_info(
     let mut command = std::process::Command::new("cmd.exe");
     command
         .args(["/d", "/s", "/c", &format!("\"{}\"", updater_path.display())])
+        .current_dir(updater_path.parent().unwrap_or_else(|| Path::new(".")))
         .env("WITCHDRAWER_UPDATE_ROOT", temp_root)
         .env("WITCHDRAWER_PAYLOAD", payload_directory)
         .env("WITCHDRAWER_APP_DIR", app_directory)
@@ -798,6 +799,72 @@ mod tests {
         let input = "line1\r\nline2\r\nline3";
         let result = UpdateService::truncate_release_notes(input, 500);
         assert_eq!(result, "line1\nline2\nline3");
+    }
+
+    #[test]
+    fn updater_start_info_runs_hidden_cmd_from_script_directory_with_env_paths() {
+        let temp_root = std::env::temp_dir()
+            .join("WitchDrawer StartInfo Tests")
+            .join(uuid::Uuid::new_v4().simple().to_string());
+        let payload_directory = temp_root.join("payload");
+        let app_directory = Path::new(r"D:\应用\WitchDrawer");
+        let updater_path = temp_root.join("updater.bat");
+        let app_executable_path = app_directory.join("WitchDrawer.App.exe");
+        let log_path = Path::new(r"C:\Users\Test\AppData\Local\WitchDrawer\Logs\updater.log");
+
+        let start_info = create_updater_start_info(
+            &updater_path,
+            &temp_root,
+            &payload_directory,
+            app_directory,
+            &app_executable_path,
+            "WitchDrawer.App.exe",
+            log_path,
+        );
+
+        // cmd.exe + /d /s /c ""updater.bat"" (same shape as C# Arguments).
+        let args: Vec<String> = start_info
+            .get_args()
+            .map(|s| s.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            args,
+            vec![
+                "/d".to_string(),
+                "/s".to_string(),
+                "/c".to_string(),
+                format!("\"{}\"", updater_path.display())
+            ]
+        );
+
+        // WorkingDirectory = script's directory.
+        let expected_dir = updater_path.parent().unwrap();
+        assert_eq!(start_info.get_current_dir(), Some(expected_dir));
+
+        // All paths travel through environment variables, nothing hard-coded.
+        let envs: std::collections::HashMap<String, String> = start_info
+            .get_envs()
+            .filter_map(|(key, value)| match (key.to_str(), value) {
+                (Some(key_str), Some(value_os)) => value_os
+                    .to_str()
+                    .map(|value_str| (key_str.to_string(), value_str.to_string())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(envs["WITCHDRAWER_UPDATE_ROOT"], temp_root.to_string_lossy());
+        assert_eq!(
+            envs["WITCHDRAWER_PAYLOAD"],
+            payload_directory.to_string_lossy()
+        );
+        assert_eq!(envs["WITCHDRAWER_APP_DIR"], app_directory.to_string_lossy());
+        assert_eq!(
+            envs["WITCHDRAWER_APP_EXE"],
+            app_executable_path.to_string_lossy()
+        );
+        assert_eq!(envs["WITCHDRAWER_EXE_NAME"], "WitchDrawer.App.exe");
+        assert_eq!(envs["WITCHDRAWER_UPDATE_LOG"], log_path.to_string_lossy());
+
+        let _ = std::fs::remove_dir_all(&temp_root);
     }
 
     #[test]
