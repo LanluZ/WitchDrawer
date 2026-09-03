@@ -616,6 +616,20 @@ public sealed class DrawerService : IDrawerService
         return _repository.SetSettingAsync(key, value, cancellationToken);
     }
 
+    public Task<bool> DeleteSettingAsync(string key, CancellationToken cancellationToken = default)
+    {
+        // Legacy reference implementation: no-op.
+        return Task.FromResult(false);
+    }
+
+    public Task UpdateItemGridPositionsAsync(
+        IReadOnlyDictionary<Guid, (int GridColumn, int GridRow)> positions,
+        CancellationToken cancellationToken = default)
+    {
+        // Legacy reference implementation: batch grid update is a no-op.
+        return Task.CompletedTask;
+    }
+
     public async Task RenameBoxAsync(Guid boxId, string newName, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(newName))

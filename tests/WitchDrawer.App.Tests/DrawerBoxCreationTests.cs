@@ -6,6 +6,7 @@ using WitchDrawer.Core.Abstractions;
 using WitchDrawer.Core.Logging;
 using WitchDrawer.Core.Models;
 using WitchDrawer.Core.Services;
+using WitchDrawer.Core.Storage;
 
 namespace WitchDrawer.App.Tests;
 
@@ -39,7 +40,12 @@ public sealed class DrawerBoxCreationTests
                 quickPanel,
                 new RustUpdateService(drawerService, logger),
                 visualStyleStore,
-                new BoxPositionLockStateStore(drawerService, logger));
+                new BoxPositionLockStateStore(drawerService, logger),
+                paths,
+                new DataStorageMigrationService(
+                    paths,
+                    ct => drawerService.CheckpointAsync(ct),
+                    new StorageLocationStore(Path.Combine(root, "storage-location.json"))));
             var existingIds = (await drawerService.GetBoxesAsync())
                 .Select(box => box.Id)
                 .ToHashSet();
@@ -62,9 +68,9 @@ public sealed class DrawerBoxCreationTests
                 BoxViewModel.GetTitleVisibilitySettingKey(createdBox.Id),
                 DesktopBoxViewModel.GetTitleVisibilitySettingKey(createdBox.Id));
             await selectedDrawer.LoadDrawerSortModeAsync();
-            Assert.Equal(DrawerItemSortMode.Name, selectedDrawer.DrawerItemSortMode);
-            Assert.True(selectedDrawer.IsDrawerSortByName);
-            Assert.Equal("名称", selectedDrawer.DrawerSortModeLabel);
+            Assert.Equal(DrawerItemSortMode.Free, selectedDrawer.DrawerItemSortMode);
+            Assert.False(selectedDrawer.IsDrawerSortByName);
+            Assert.Equal("自由", selectedDrawer.DrawerSortModeLabel);
             Assert.Equal(
                 BoxViewModel.GetDrawerSortModeSettingKey(createdBox.Id),
                 DesktopBoxViewModel.GetDrawerSortModeSettingKey(createdBox.Id));
@@ -78,7 +84,7 @@ public sealed class DrawerBoxCreationTests
             Assert.Equal(
                 DrawerItemSortMode.ModifiedDate.ToString(),
                 await drawerService.GetSettingAsync(
-                    BoxViewModel.GetDrawerSortModeSettingKey(createdBox.Id)));
+                    BoxViewModel.GetBoxSortModeSettingKey(createdBox.Id)));
 
             await selectedDrawer.ToggleTitleVisibilityCommand.ExecuteAsync(null);
 

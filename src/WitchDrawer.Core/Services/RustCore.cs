@@ -875,6 +875,9 @@ public sealed class RustDrawerService : IDisposable, IDrawerService
 /// </summary>
 public sealed class RustTodoService : ITodoService
 {
+    /// <summary>Maximum allowed todo title length. Mirrors upstream <c>TodoService.MaximumTitleLength</c>.</summary>
+    public const int MaximumTitleLength = 200;
+
     private readonly RustDrawerService _owner;
 
     /// <summary>

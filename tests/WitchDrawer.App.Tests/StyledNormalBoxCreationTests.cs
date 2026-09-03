@@ -6,6 +6,7 @@ using WitchDrawer.Core.Abstractions;
 using WitchDrawer.Core.Logging;
 using WitchDrawer.Core.Models;
 using WitchDrawer.Core.Services;
+using WitchDrawer.Core.Storage;
 
 namespace WitchDrawer.App.Tests;
 
@@ -40,7 +41,12 @@ public sealed class StyledNormalBoxCreationTests
                 quickPanel,
                 new RustUpdateService(drawerService, logger),
                 visualStyleStore,
-                new BoxPositionLockStateStore(drawerService, logger));
+                new BoxPositionLockStateStore(drawerService, logger),
+                paths,
+                new DataStorageMigrationService(
+                    paths,
+                    ct => drawerService.CheckpointAsync(ct),
+                    new StorageLocationStore(Path.Combine(root, "storage-location.json"))));
             var existingIds = (await drawerService.GetBoxesAsync())
                 .Select(box => box.Id)
                 .ToHashSet();

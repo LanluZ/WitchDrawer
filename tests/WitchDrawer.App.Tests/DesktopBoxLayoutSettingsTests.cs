@@ -93,20 +93,21 @@ public sealed class DesktopBoxLayoutSettingsTests
     }
 
     [Theory]
-    [InlineData("3x3", 5)]
-    [InlineData("4x4", 2.5)]
-    [InlineData("5x5", 2)]
-    [InlineData("6x6", 1.5)]
+    [InlineData("3x3", 2, 10)]
+    [InlineData("4x4", 1.5, 6)]
+    [InlineData("5x5", 1, 6)]
+    [InlineData("6x6", 0.5, 6)]
     public void DrawerHoverGlow_StaysTwoPixelsOutsideTheIconBase(
         string preset,
-        double expectedMargin)
+        double expectedMargin,
+        double expectedFreeSpace)
     {
         var settings = new DesktopBoxLayoutSettings(isDrawerMode: true);
         settings.ApplyPresetWithoutCallback(preset);
 
         Assert.Equal(expectedMargin, settings.DrawerHoverMargin.Left);
         Assert.Equal(
-            4,
+            expectedFreeSpace,
             settings.DrawerCoverCellSize
             - (settings.DrawerHoverMargin.Left * 2)
             - settings.DrawerPrimaryIconFrameSize);
