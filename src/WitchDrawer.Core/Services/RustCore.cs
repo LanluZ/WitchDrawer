@@ -791,6 +791,9 @@ public sealed class RustDrawerService : IDisposable, IDrawerService
         CancellationToken cancellationToken = default) =>
         RunExclusiveAsync(() => DeleteSetting(key), cancellationToken);
 
+    public Task CheckpointAsync(CancellationToken cancellationToken = default) =>
+        RunExclusiveAsync(() => Checkpoint(), cancellationToken);
+
     public Task RenameBoxAsync(
         Guid boxId,
         string newName,
