@@ -18,6 +18,29 @@ const GITHUB_RELEASE_PAGE: &str =
     "https://github.com/witchscottishfoldcat/WitchDrawer/releases/latest";
 const VERSION_TAG_PREFIX: &str = "v";
 
+const UPDATE_ROOT_FOLDER_NAME: &str = "WitchDrawerUpdate";
+const STARTUP_SUCCESS_MARKER_FILE_NAME: &str = "startup-succeeded.marker";
+const STARTUP_SUCCESS_MARKER_ENV: &str = "WITCHDRAWER_STARTUP_SUCCESS_MARKER";
+
+/// Check whether `s` is a 32-char hex GUID in the N-format (no dashes).
+fn is_n_guid(s: &str) -> bool {
+    s.len() == 32 && s.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+/// Compare two paths for equality, ignoring trailing separators and case
+/// (Windows). Mirrors the C# `Path.GetFullPath(...)` + `OrdinalIgnoreCase`
+/// comparison used by `TryResolveStartupSuccessMarkerPath`.
+fn paths_same(a: &Path, b: &Path) -> bool {
+    fn norm(p: &Path) -> String {
+        let mut s = p.to_string_lossy().replace('/', "\\");
+        while s.ends_with('\\') {
+            s.pop();
+        }
+        s
+    }
+    norm(a).eq_ignore_ascii_case(&norm(b))
+}
+
 // ---------------------------------------------------------------------------
 // GitHub API response types
 // ---------------------------------------------------------------------------
@@ -376,6 +399,60 @@ impl UpdateService {
             }
         }
         removed_count
+    }
+
+    /// Confirm that the application started successfully after a self-update.
+    /// Writes the startup-success marker to the path supplied via the
+    /// `WITCHDRAWER_STARTUP_SUCCESS_MARKER` environment variable (set by the
+    /// updater). The path is validated to be inside the temp update session
+    /// directory before writing. Mirrors the C# `ConfirmUpdateStartupAsync`.
+    pub fn confirm_update_startup(&self) -> AppResult<bool> {
+        let marker_path = match std::env::var(STARTUP_SUCCESS_MARKER_ENV) {
+            Ok(p) if !p.trim().is_empty() => p,
+            _ => return Ok(false),
+        };
+
+        let full = match std::path::absolute(Path::new(&marker_path)) {
+            Ok(p) => p,
+            Err(e) => {
+                return Err(AppError::io_error(format!(
+                    "invalid startup marker path: {}",
+                    e
+                )))
+            }
+        };
+
+        // The marker file must be named `startup-succeeded.marker`.
+        let file_name = full.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if !file_name.eq_ignore_ascii_case(STARTUP_SUCCESS_MARKER_FILE_NAME) {
+            return Ok(false);
+        }
+
+        // Its parent directory must be `<temp>/WitchDrawerUpdate/<uuid-N>`.
+        let session_dir = match full.parent() {
+            Some(d) => d,
+            None => return Ok(false),
+        };
+        let session_name = session_dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("");
+        if !is_n_guid(session_name) || !session_dir.exists() {
+            return Ok(false);
+        }
+        let expected_parent = std::env::temp_dir().join(UPDATE_ROOT_FOLDER_NAME);
+        if !session_dir
+            .parent()
+            .map(|p| paths_same(p, &expected_parent))
+            .unwrap_or(false)
+        {
+            return Ok(false);
+        }
+
+        let timestamp = chrono::Utc::now().to_rfc3339();
+        fs::write(&full, timestamp)
+            .map_err(|e| AppError::io_error(format!("failed to write startup marker: {}", e)))?;
+        Ok(true)
     }
 
     // =======================================================================

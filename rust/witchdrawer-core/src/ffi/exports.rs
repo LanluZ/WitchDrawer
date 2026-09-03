@@ -883,6 +883,22 @@ pub unsafe extern "C" fn wd_cleanup_legacy_updater_artifacts(ctx: *mut Context) 
     })
 }
 
+/// Confirm the app started successfully after a self-update by writing the
+/// startup-success marker (validated to live inside the temp update session).
+#[no_mangle]
+pub unsafe extern "C" fn wd_confirm_update_startup(ctx: *mut Context) -> *mut c_char {
+    ffi_catch(|| {
+        let ctx = match unsafe { ctx.as_ref() } {
+            Some(c) => c,
+            None => return ffi_err("null context"),
+        };
+        match ctx.update.confirm_update_startup() {
+            Ok(confirmed) => ffi_ok(serde_json::Value::Bool(confirmed)),
+            Err(e) => ffi_err(&e.message),
+        }
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
