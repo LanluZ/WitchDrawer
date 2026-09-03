@@ -57,6 +57,24 @@ struct RestorePlan {
     restored_to_desktop: bool,
 }
 
+/// Compare two filesystem paths for equality, ignoring trailing separators and
+/// case on Windows. Mirrors the C# `Path.GetFullPath(...)` + `OrdinalIgnoreCase`
+/// comparison used by `RepairStoredPathsAsync`.
+fn path_eq(a: &str, b: &str) -> bool {
+    norm_fs_path(a).eq_ignore_ascii_case(&norm_fs_path(b))
+}
+
+/// Normalise a path for comparison: forward slashes to backslashes, trim
+/// trailing separators. Does not resolve `..` segments (storage paths do not
+/// contain them).
+fn norm_fs_path(p: &str) -> String {
+    let mut s = p.replace('/', "\\");
+    while s.ends_with('\\') {
+        s.pop();
+    }
+    s
+}
+
 // ---------------------------------------------------------------------------
 // DrawerService
 // ---------------------------------------------------------------------------
@@ -76,6 +94,7 @@ impl DrawerService {
     pub fn initialize(&self) -> AppResult<()> {
         self.paths.ensure_created()?;
         self.repository.initialize()?;
+        self.repair_stored_paths()?;
         self.ensure_default_boxes()
     }
 
@@ -191,6 +210,12 @@ impl DrawerService {
     ) -> AppResult<()> {
         self.repository
             .update_item_grid_position(item_id, grid_column, grid_row)
+    }
+
+    /// Batch-update multiple items' grid positions in one transaction.
+    /// Mirrors the C# `DrawerService.UpdateItemGridPositionsAsync`.
+    pub fn update_item_grid_positions(&self, positions: &[(Uuid, i32, i32)]) -> AppResult<()> {
+        self.repository.update_item_grid_positions(positions)
     }
 
     // -- Import -------------------------------------------------------------
@@ -652,6 +677,14 @@ impl DrawerService {
         self.repository.set_setting(key, value)
     }
 
+    pub fn delete_setting(&self, key: &str) -> AppResult<bool> {
+        self.repository.delete_setting(key)
+    }
+
+    pub fn checkpoint(&self) -> AppResult<()> {
+        self.repository.checkpoint()
+    }
+
     // -- Open item ----------------------------------------------------------
 
     pub fn open_item(
@@ -703,6 +736,57 @@ impl DrawerService {
         }
         self.create_box("\u{666E}\u{901A}\u{6536}\u{7EB3}\u{76D2}", BoxType::Normal)?;
         self.create_box("\u{6620}\u{5C04}\u{6536}\u{7EB3}\u{76D2}", BoxType::Mapping)?;
+        Ok(())
+    }
+
+    /// After a data-directory move, repoint box storage paths and item stored
+    /// paths to the new `BoxesDirectory`. Mirrors the C# `RepairStoredPathsAsync`.
+    fn repair_stored_paths(&self) -> AppResult<()> {
+        let boxes = self.repository.get_boxes()?;
+        let boxes_dir = self.paths.boxes_directory();
+
+        for b in boxes {
+            if !matches!(
+                b.box_type,
+                BoxType::Normal | BoxType::Pixel | BoxType::Drawer
+            ) {
+                continue;
+            }
+            let expected = boxes_dir.join(format!("{:?}", b.id).replace('-', ""));
+            if !expected.exists() {
+                fs::create_dir_all(&expected)?;
+            }
+            let expected_str = expected.to_string_lossy().to_string();
+            let current_str = b
+                .storage_path
+                .clone()
+                .unwrap_or_else(|| expected_str.clone());
+            if !path_eq(&current_str, &expected_str) {
+                self.repository
+                    .update_box_storage_path(b.id, &expected_str)?;
+            }
+
+            let items = self.repository.get_items(Some(b.id))?;
+            for item in items {
+                let stored = match &item.stored_path {
+                    Some(s) if !s.trim().is_empty() => s.clone(),
+                    _ => continue,
+                };
+                let name = Path::new(&stored)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                if name.is_empty() {
+                    continue;
+                }
+                let expected_item_str = expected.join(&name).to_string_lossy().to_string();
+                if !Path::new(&expected_item_str).exists() || path_eq(&stored, &expected_item_str) {
+                    continue;
+                }
+                self.repository
+                    .update_item_stored_path(item.id, &expected_item_str)?;
+            }
+        }
         Ok(())
     }
 
