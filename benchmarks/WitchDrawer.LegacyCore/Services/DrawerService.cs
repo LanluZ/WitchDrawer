@@ -20,6 +20,54 @@ public sealed class DrawerService : IDrawerService
         _paths.EnsureCreated();
         await _repository.InitializeAsync(cancellationToken);
         await EnsureDefaultBoxesAsync(cancellationToken);
+        await RepairStoredPathsAsync(cancellationToken);
+    }
+
+    private async Task RepairStoredPathsAsync(CancellationToken cancellationToken)
+    {
+        var boxes = await _repository.GetBoxesAsync(cancellationToken);
+        var boxesDir = _paths.BoxesDirectory;
+
+        foreach (var box in boxes)
+        {
+            if (box.Type is not (BoxType.Normal or BoxType.Pixel or BoxType.Drawer))
+            {
+                continue;
+            }
+
+            var expectedBoxDir = Path.Combine(boxesDir, box.Id.ToString("N"));
+            Directory.CreateDirectory(expectedBoxDir);
+            var currentBoxDir = string.IsNullOrWhiteSpace(box.StoragePath) ? expectedBoxDir : box.StoragePath;
+            if (!string.Equals(Path.GetFullPath(currentBoxDir), Path.GetFullPath(expectedBoxDir), StringComparison.OrdinalIgnoreCase))
+            {
+                await _repository.UpdateBoxStoragePathAsync(box.Id, expectedBoxDir, cancellationToken);
+            }
+
+            var items = await _repository.GetItemsAsync(box.Id, cancellationToken);
+            foreach (var item in items)
+            {
+                if (string.IsNullOrWhiteSpace(item.StoredPath))
+                {
+                    continue;
+                }
+
+                var name = Path.GetFileName(item.StoredPath);
+                if (string.IsNullOrEmpty(name))
+                {
+                    continue;
+                }
+
+                var expectedItemPath = Path.Combine(expectedBoxDir, name);
+                // 文件尚未出现在当前存储根（离线下看不到）或已就位时，跳过。
+                if ((!File.Exists(expectedItemPath) && !Directory.Exists(expectedItemPath))
+                    || string.Equals(Path.GetFullPath(item.StoredPath), Path.GetFullPath(expectedItemPath), StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                await _repository.UpdateItemStoredPathAsync(item.Id, expectedItemPath, cancellationToken);
+            }
+        }
     }
 
     public Task<IReadOnlyList<Box>> GetBoxesAsync(CancellationToken cancellationToken = default)
@@ -626,8 +674,7 @@ public sealed class DrawerService : IDrawerService
         IReadOnlyDictionary<Guid, (int GridColumn, int GridRow)> positions,
         CancellationToken cancellationToken = default)
     {
-        // Legacy reference implementation: batch grid update is a no-op.
-        return Task.CompletedTask;
+        return _repository.UpdateItemGridPositionsAsync(positions, cancellationToken);
     }
 
     public async Task RenameBoxAsync(Guid boxId, string newName, CancellationToken cancellationToken = default)
@@ -677,9 +724,19 @@ public sealed class DrawerService : IDrawerService
 
     private static bool IsMissingStoredItem(DrawerItem item)
     {
-        return !string.IsNullOrWhiteSpace(item.StoredPath)
-            && !File.Exists(item.StoredPath)
-            && !Directory.Exists(item.StoredPath);
+        if (string.IsNullOrWhiteSpace(item.StoredPath))
+        {
+            return false;
+        }
+
+        var parentDirectory = Path.GetDirectoryName(item.StoredPath);
+        // 存储目录不可达（离线盘/网络盘掉线/收纳盒目录被移走）时“暂时看不到”不等于“已删除”，保留记录。
+        if (string.IsNullOrWhiteSpace(parentDirectory) || !Directory.Exists(parentDirectory))
+        {
+            return false;
+        }
+
+        return !File.Exists(item.StoredPath) && !Directory.Exists(item.StoredPath);
     }
 
     private async Task EnsureDefaultBoxesAsync(CancellationToken cancellationToken)

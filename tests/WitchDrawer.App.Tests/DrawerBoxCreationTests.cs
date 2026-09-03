@@ -98,7 +98,7 @@ public sealed class DrawerBoxCreationTests
         {
             if (Directory.Exists(root))
             {
-                Directory.Delete(root, recursive: true);
+                TestCleanup.DeleteDirectory(root);
             }
         }
     }

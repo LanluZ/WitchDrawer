@@ -4,41 +4,33 @@ using WitchDrawer.App.ViewModels;
 using WitchDrawer.Core;
 using WitchDrawer.Core.Abstractions;
 using WitchDrawer.Core.Logging;
-using WitchDrawer.Core.Models;
 using WitchDrawer.Core.Services;
 using WitchDrawer.Core.Storage;
 
 namespace WitchDrawer.App.Tests;
 
-public sealed class StyledNormalBoxCreationTests
+public sealed class DesktopDoubleClickSettingTests
 {
     [Fact]
-    public async Task PixelStyleCreation_PreservesNormalBoxFileBehavior()
+    public async Task LoadAndToggle_PersistsDesktopDoubleClickSetting()
     {
-        var root = Path.Combine(
-            Path.GetTempPath(),
-            "WitchDrawerTests",
-            Guid.NewGuid().ToString("N"));
+        var root = Path.Combine(Path.GetTempPath(), "WitchDrawerTests", Guid.NewGuid().ToString("N"));
         try
         {
             var paths = new AppPaths(root);
             
             using var drawerService = new RustDrawerService(paths.RootDirectory);
             await drawerService.InitializeAsync();
+            await drawerService.SetSettingAsync(MainViewModel.DesktopDoubleClickSettingKey, bool.TrueString);
             var logger = new RecordingLogger();
             var launcher = new NoOpFileLauncher();
             var visualStyleStore = new BoxVisualStyleStore(drawerService, logger);
-            var quickPanel = new QuickPanelViewModel(
-                drawerService,
-                launcher,
-                logger,
-                visualStyleStore);
             var viewModel = new MainViewModel(
                 drawerService,
                 new RustTodoService(drawerService),
                 launcher,
                 logger,
-                quickPanel,
+                new QuickPanelViewModel(drawerService, launcher, logger, visualStyleStore),
                 new RustUpdateService(drawerService, logger),
                 visualStyleStore,
                 new BoxPositionLockStateStore(drawerService, logger),
@@ -47,30 +39,16 @@ public sealed class StyledNormalBoxCreationTests
                     paths,
                     ct => drawerService.CheckpointAsync(ct),
                     new StorageLocationStore(Path.Combine(root, "storage-location.json"))));
-            var existingIds = (await drawerService.GetBoxesAsync())
-                .Select(box => box.Id)
-                .ToHashSet();
 
-            await viewModel.CreatePixelBoxCommand.ExecuteAsync(null);
+            await viewModel.LoadAsync();
+            Assert.True(viewModel.IsDesktopDoubleClickEnabled);
 
-            var createdBox = Assert.Single(
-                await drawerService.GetBoxesAsync(),
-                box => !existingIds.Contains(box.Id));
-            Assert.Equal(BoxType.Normal, createdBox.Type);
-            Assert.Equal(
-                BoxVisualStyle.Pixel,
-                await visualStyleStore.LoadAsync(createdBox));
-            var selectedBox = Assert.IsType<BoxViewModel>(viewModel.SelectedBox);
-            await selectedBox.LoadTitleVisibilityAsync();
-            Assert.True(selectedBox.IsTitleVisible);
+            await viewModel.ToggleDesktopDoubleClickCommand.ExecuteAsync(null);
 
-            await selectedBox.ToggleTitleVisibilityCommand.ExecuteAsync(null);
-
-            Assert.False(selectedBox.IsTitleVisible);
+            Assert.False(viewModel.IsDesktopDoubleClickEnabled);
             Assert.Equal(
                 bool.FalseString,
-                await drawerService.GetSettingAsync(
-                    BoxViewModel.GetTitleVisibilitySettingKey(createdBox.Id)));
+                await drawerService.GetSettingAsync(MainViewModel.DesktopDoubleClickSettingKey));
         }
         finally
         {
@@ -83,12 +61,8 @@ public sealed class StyledNormalBoxCreationTests
 
     private sealed class NoOpFileLauncher : IFileLauncher
     {
-        public Task OpenAsync(
-            string path,
-            CancellationToken cancellationToken = default)
-        {
-            return Task.CompletedTask;
-        }
+        public Task OpenAsync(string path, CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
     }
 
     private sealed class RecordingLogger : IAppLogger

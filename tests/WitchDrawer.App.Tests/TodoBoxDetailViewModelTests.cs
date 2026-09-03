@@ -205,7 +205,7 @@ public sealed class TodoBoxDetailViewModelTests
             {
                 if (Directory.Exists(Root))
                 {
-                    Directory.Delete(Root, recursive: true);
+                    TestCleanup.DeleteDirectory(Root);
                 }
             }
             catch
